@@ -21,7 +21,7 @@
   (let [ev (trace n)
         ev2 (trace j)]
     (and (interference [ev2 ev])
-         (empty? (for [k (range n (inc j))
+         (empty? (for [k (range j (inc n))
                        :let [ev3 (trace k)]
                        :when (and (or (mhb [ev2 ev3]) (interference [ev2 ev3]))
                                   (or (mhb [ev3 ev]) (interference [ev3 ev])))]
