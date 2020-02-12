@@ -2,20 +2,20 @@
   (:require [clojure.set :refer [union difference intersection]]))
 
 (defn new-node [ev enabled]
-  {:backset #{ev} :enabled enabled :blocked #{} :sleep #{ev}})
+  {:backset #{ev} :enabled enabled :blocked #{} :sleep #{}})
 
 (defn update-node [node ev enabled]
   (merge-with union node (new-node ev enabled)))
 
 (defn next-sleep-set [node ev sleep interference]
-  (or node
-      {:sleep (->> (filter #(not (interference [ev %])) sleep)
-                   (into #{}))}))
+  (->> (filter #(not (interference [ev %])) sleep)
+       (into #{})
+       (update (or node {}) :sleep (fnil union #{}))))
 
 (defn not-dep [trace i mhb interference]
   (let [ev (trace i)
         t (subvec trace (inc i))]
-    (vec (filter #(not (or (mhb [ev %]) (interference [ev %]))) t))))
+    (filterv #(not (or (mhb [ev %]) (interference [ev %]))) t)))
 
 (defn race? [trace n j mhb interference]
   (let [ev (trace n)
@@ -23,12 +23,12 @@
     (and (interference [ev2 ev])
          (empty? (for [k (range n (inc j))
                        :let [ev3 (trace k)]
-                       :when (and (interference [ev2 ev3])
-                                  (interference [ev3 ev]))]
+                       :when (and (or (mhb [ev2 ev3]) (interference [ev2 ev3]))
+                                  (or (mhb [ev3 ev]) (interference [ev3 ev])))]
                    k)))))
 
 (defn reversible-events? [search-state trace n j mhb]
-  (not (mhb [(trace n) (trace j)])))
+  (not (mhb [(trace j) (trace n)])))
 
 (defn initial-set [pre v mhb]
   (difference (set v)
@@ -65,7 +65,8 @@
               next-node (next-sleep-set (s t2) ev (:sleep node) interference)]
           (-> (assoc s t1 node)
               (assoc t2 next-node)
-              (update-backsets trace i mhb interference))))
+              (update-backsets trace i mhb interference)
+              (update-in [t1 :sleep] conj ev))))
       (reduce search-state (range (count trace)))
       (update trace (partial merge-with union)
               {:enabled (last enabled-sets)})))
