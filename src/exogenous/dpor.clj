@@ -5,53 +5,54 @@
   {:backset #{ev} :enabled enabled :blocked #{} :sleep #{}})
 
 (defn update-node [node ev enabled]
-  (merge-with union node (new-node ev enabled)))
+  (if (empty? (:backset node))
+    (merge-with union node (new-node ev enabled))
+    node))
 
-(defn next-sleep-set [node ev sleep interference]
-  (->> (filter #(not (interference [ev %])) sleep)
-       (into #{})
-       (update (or node {}) :sleep (fnil union #{}))))
+(defn next-sleep-set [node ev sleep mhb interference]
+  (or node
+      (->> (filter #(not (or (mhb [ev %]) (interference [ev %]))) sleep)
+           (into #{})
+           (assoc node :sleep))))
 
 (defn not-dep [trace i mhb interference]
   (let [ev (trace i)
         t (subvec trace (inc i))]
     (filterv #(not (or (mhb [ev %]) (interference [ev %]))) t)))
 
-(defn race? [trace n j mhb interference]
+(defn reversible-race? [trace n j mhb interference]
   (let [ev (trace n)
         ev2 (trace j)]
-    (and (interference [ev2 ev])
+    (and (not (mhb [ev2 ev]))
+         (interference [ev2 ev])
          (empty? (for [k (range j (inc n))
                        :let [ev3 (trace k)]
                        :when (and (or (mhb [ev2 ev3]) (interference [ev2 ev3]))
                                   (or (mhb [ev3 ev]) (interference [ev3 ev])))]
                    k)))))
 
-(defn reversible-events? [search-state trace n j mhb]
-  (not (mhb [(trace j) (trace n)])))
-
 (defn initial-set [pre v mhb]
   (difference (set v)
-              (set (for [ev1 v ev2 v
-                         :when (mhb [ev1 ev2])]
-                     ev2))))
+              (set (for [i (range (count v))
+                         j (range i)
+                         :when (mhb [(v j) (v i)])]
+                     (v i)))))
 
-(defn update-backset [search-state trace n j mhb interference]
+(defn update-backset [search-state trace n j enabled mhb interference]
   (let [ev1 (trace n)
         pre (subvec trace 0 j)
         v (conj (not-dep trace j mhb interference) ev1)
-        initials (initial-set pre v mhb)
+        initials (intersection enabled (initial-set pre v mhb))
         backset (:backset (search-state pre))]
     (if (empty? (intersection initials backset))
       (update-in search-state [pre :backset] conj (first initials))
       search-state)))
 
-(defn update-backsets [search-state trace n mhb interference]
+(defn update-backsets [search-state trace n enabled-sets mhb interference]
   (let [t (subvec trace 0 n)]
     (-> (fn [s j]
-          (if (and (race? trace n j mhb interference)
-                   (reversible-events? s trace n j mhb))
-            (update-backset s trace n j mhb interference)
+          (if (reversible-race? trace n j mhb interference)
+            (update-backset s trace n j (enabled-sets j) mhb interference)
             s))
         (reduce search-state (range n)))))
 
@@ -62,14 +63,13 @@
               ev (trace i)
               enabled (enabled-sets i)
               node (update-node (s t1) ev enabled)
-              next-node (next-sleep-set (s t2) ev (:sleep node) interference)]
+              next-node (next-sleep-set (s t2) ev (:sleep node) mhb interference)]
           (-> (assoc s t1 node)
+              (update-backsets trace i enabled-sets mhb interference)
               (assoc t2 next-node)
-              (update-backsets trace i mhb interference)
               (update-in [t1 :sleep] conj ev))))
       (reduce search-state (range (count trace)))
-      (update trace (partial merge-with union)
-              {:enabled (last enabled-sets)})))
+      (assoc-in [trace :enabled] (last enabled-sets))))
 
 (defn backtrack [search-state]
   (-> (fn [[trace {:keys [:backset :sleep]}]]
