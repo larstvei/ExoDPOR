@@ -76,6 +76,14 @@
         (map (partial conj trace) (difference backset sleep)))
       (mapcat search-state)))
 
+(defn backtrack-depth-first [search-state trace]
+  (let [backsets (-> (fn [i e]
+                       (let [t (subvec trace 0 i)
+                             node (search-state t)]
+                         (map (partial conj t) (difference (:backset node) (:sleep node)))))
+                     (map-indexed trace))]
+    (last (filter not-empty backsets))))
+
 (defn backtrack-naive [search-state]
   (-> (fn [[trace {:keys [:enabled :sleep]}]]
         (map (partial conj trace) (difference enabled sleep)))
