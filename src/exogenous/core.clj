@@ -7,9 +7,9 @@
   (swap! search-state dpor/add-trace trace enabled mhb interference))
 
 (defn explore [sim]
-  (apply submit (sim []))
-  (loop [backtrack (dpor/backtrack @search-state)]
+  (reset! search-state {})
+  (loop [backtrack [[]]]
     (when-not (empty? backtrack)
-      (doseq [t backtrack]
-        (apply submit (sim t)))
-      (recur (dpor/backtrack @search-state)))))
+      (let [[trace enabled mhb interference] (sim (first backtrack))]
+        (submit trace enabled mhb interference)
+        (recur (dpor/backtrack-depth-first @search-state trace))))))
