@@ -1,5 +1,6 @@
 (ns exogenous.dpor
-  (:require [clojure.set :refer [union difference intersection]]))
+  (:require [clojure.set :refer [union difference intersection]]
+            [exogenous.relations :refer [relates?]]))
 
 (defn new-node [ev enabled]
   {:backset #{ev} :enabled enabled :blocked #{} :sleep #{}})
@@ -11,31 +12,31 @@
 
 (defn next-sleep-set [node ev sleep mhb interference]
   (or node
-      (->> (filter #(not (or (mhb [ev %]) (interference [ev %]))) sleep)
+      (->> (filter #(not (or (relates? mhb ev %) (relates? interference ev %))) sleep)
            (into #{})
            (assoc node :sleep))))
 
 (defn not-dep [trace i mhb interference]
   (let [ev (trace i)
         t (subvec trace (inc i))]
-    (filterv #(not (or (mhb [ev %]) (interference [ev %]))) t)))
+    (filterv #(not (or (relates? mhb ev %) (relates? interference ev %))) t)))
 
 (defn reversible-race? [trace n j mhb interference]
   (let [ev (trace n)
         ev2 (trace j)]
-    (and (not (mhb [ev2 ev]))
-         (interference [ev2 ev])
+    (and (not (relates? mhb ev2 ev))
+         (relates? interference ev2 ev)
          (empty? (for [k (range j (inc n))
                        :let [ev3 (trace k)]
-                       :when (and (or (mhb [ev2 ev3]) (interference [ev2 ev3]))
-                                  (or (mhb [ev3 ev]) (interference [ev3 ev])))]
+                       :when (and (or (relates? mhb ev2 ev3) (relates? interference ev2 ev3))
+                                  (or (relates? mhb ev3 ev) (relates? interference ev3 ev)))]
                    k)))))
 
 (defn initial-set [pre v mhb]
   (difference (set v)
               (set (for [i (range (count v))
                          j (range i)
-                         :when (mhb [(v j) (v i)])]
+                         :when (relates? mhb (v j) (v i))]
                      (v i)))))
 
 (defn update-backset [search-state trace n j enabled mhb interference]
@@ -79,8 +80,9 @@
 (defn backtrack-depth-first [search-state trace]
   (let [backsets (-> (fn [i e]
                        (let [t (subvec trace 0 i)
-                             node (search-state t)]
-                         (map (partial conj t) (difference (:backset node) (:sleep node)))))
+                             node (search-state t)
+                             backtrack (difference (:backset node) (:sleep node))]
+                         (map (partial conj t) backtrack)))
                      (map-indexed trace))]
     (last (filter not-empty backsets))))
 

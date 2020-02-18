@@ -1,31 +1,32 @@
 (ns exogenous.dpor-test
   (:require [exogenous.dpor :refer :all]
+            [exogenous.relations :as rel]
             [clojure.test :as t]))
 
 (def trace [:p1 :q1 :q2 :r1 :r2])
 (def pre [:p1])
 (def w [:q1 :q2])
-(def mhb #{[:q1 :q2] [:r1 :r2]})
-(def interference #{[:p1 :q2] [:p1 :r2]})
+(let [mhb-raw #{[:q1 :q2] [:r1 :r2]}
+      interference-raw #{[:p1 :q2] [:p1 :r2]}
+      {:keys [:mhb :interference]} (rel/make-rels trace mhb-raw interference-raw)]
+  (def mhb mhb)
+  (def interference interference))
 (def enabled-sets [#{:q1 :p1 :r1} #{:q1 :r1} #{:q2 :r1} #{:r1} #{:r2} #{}])
 
 (t/deftest initials
-  (t/testing "Initials"
-    (t/is (= #{:q1} (initial-set pre w mhb)))))
+  (t/is (= #{:q1} (initial-set pre w mhb))))
 
 (t/deftest reversible-race
-  (t/testing "reversible races"
-    (t/is (= (->> (for [n (range (count trace))
-                        j (range (inc n))
-                        :when (reversible-race? trace n j mhb interference)]
-                    [(trace j) (trace n)])
-                  (into #{}))
-             #{[:p1 :q2] [:p1 :r2]}))))
+  (t/is (= (->> (for [n (range (count trace))
+                      j (range (inc n))
+                      :when (reversible-race? trace n j mhb interference)]
+                  [(trace j) (trace n)])
+                (into #{}))
+           #{[:p1 :q2] [:p1 :r2]})))
 
 (t/deftest add-a-trace
-  (t/testing "adding a trace"
-    (t/is (= (add-trace {} trace enabled-sets mhb interference)
-             {[]
+  (let [result (add-trace {} trace enabled-sets mhb interference)]
+    (t/is (= {[]
               {:backset #{:q1 :p1}, :enabled #{:q1 :p1 :r1}, :blocked #{}, :sleep #{:p1}},
 
               [:p1]
@@ -41,4 +42,7 @@
               {:sleep #{:r2}, :backset #{:r2}, :enabled #{:r2}, :blocked #{}},
 
               [:p1 :q1 :q2 :r1 :r2]
-              {:sleep #{}, :enabled #{}}}))))
+              {:sleep #{}, :enabled #{}}}
+             result))
+    (t/is (= '([:q1])
+             (backtrack result)))))
