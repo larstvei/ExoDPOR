@@ -12,9 +12,15 @@
 
 (defn next-sleep-set [node ev sleep {hb :hb}]
   (or node
-      (->> (filter #(not (relates? hb ev %)) sleep)
+      (->> (remove #(relates? hb ev %) sleep)
            (into #{})
            (assoc node :sleep))))
+
+(defn enabled-after [trace i {mhb :mhb}]
+  (let [pre (set (subvec trace 0 i))
+        post (subvec trace i)]
+    (->> (filter (fn [ev] (empty? (difference (mhb ev) pre))) post)
+         (into #{}))))
 
 (defn not-dep [trace i {hb :hb}]
   (let [ev (trace i)
@@ -42,29 +48,19 @@
 (defn update-backset [search-state trace n j rels]
   (let [ev1 (trace n)
         pre (subvec trace 0 j)
-        enabled (:enabled (search-state pre))
+        {:keys [:enabled :backset]} (search-state pre)
         v (conj (not-dep trace j rels) ev1)
-        initials (intersection enabled (initial-set pre v rels))
-        backset (:backset (search-state pre))]
+        initials (intersection enabled (initial-set pre v rels))]
     (if (empty? (intersection initials backset))
       (update-in search-state [pre :backset] conj (first initials))
       search-state)))
 
 (defn update-backsets [search-state trace n rels]
   (let [t (subvec trace 0 n)]
-    (-> (fn [s j]
-          (if (reversible-race? trace n j rels)
-            (update-backset s trace n j rels)
-            s))
-        (reduce search-state (range n)))))
+    (->> (filter (fn [j] (reversible-race? trace n j rels)) (range n))
+         (reduce (fn [s j] (update-backset s trace n j rels)) search-state))))
 
-(defn enabled-after [trace i {mhb :mhb}]
-  (let [pre (set (subvec trace 0 i))
-        post (subvec trace i)]
-    (->> (filter (fn [ev] (empty? (difference (mhb ev) pre))) post)
-         (into #{}))))
-
-(defn add-trace [search-state trace rels]
+(defn add-trace [search-state prefix trace rels]
   (-> (fn [s i]
         (let [t1 (subvec trace 0 i)
               t2 (subvec trace 0 (inc i))
@@ -79,12 +75,14 @@
       (reduce search-state (range (count trace)))
       (assoc-in [trace :enabled] (enabled-after trace (count trace) rels))))
 
-(defn backtrack [search-state]
-  (-> (fn [[trace {:keys [:backset :sleep]}]]
-        (map (partial conj trace) (difference backset sleep)))
+(defmulti backtrack :strategy)
+
+(defmethod backtrack :all [{:keys [:search-state]}]
+  (-> (fn [[prefix {:keys [:backset :sleep]}]]
+        (map (partial conj prefix) (difference backset sleep)))
       (mapcat search-state)))
 
-(defn backtrack-depth-first [search-state trace]
+(defmethod backtrack :depth-first [{:keys [:search-state :trace]}]
   (let [backsets (-> (fn [i e]
                        (let [t (subvec trace 0 i)
                              node (search-state t)
@@ -93,9 +91,8 @@
                      (map-indexed trace))]
     (last (filter not-empty backsets))))
 
-(defn backtrack-naive [search-state]
-  (-> (fn [[trace {:keys [:enabled :sleep]}]]
-        (map (partial conj trace) (difference enabled sleep)))
-      (mapcat search-state)))
-
-#_(def backtrack backtrack-naive)
+(defmethod backtrack :naive [{:keys [:search-state]}]
+  (let [candidates (mapcat (fn [[prefix {:keys [:enabled]}]]
+                             (map (partial conj prefix) enabled))
+                           search-state)]
+    (remove search-state candidates)))
