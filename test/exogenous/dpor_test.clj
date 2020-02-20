@@ -32,7 +32,7 @@
            #{[:p1 :q2] [:p1 :r2]})))
 
 (t/deftest add-a-trace
-  (let [result (add-trace {} trace rels)]
+  (let [result (add-trace {} [] trace rels)]
     (t/is (= {[]
               {:backset #{:q1 :p1}, :enabled #{:q1 :p1 :r1}, :blocked #{}, :sleep #{:p1}},
 
@@ -52,4 +52,6 @@
               {:sleep #{}, :enabled #{}}}
              result))
     (t/is (= '([:q1])
-             (backtrack result)))))
+             (backtrack {:strategy :depth-first
+                         :trace trace
+                         :search-state result})))))
