@@ -9,12 +9,14 @@
 
 (defn explore [sim]
   (reset! search-state {})
-  (loop [backtrack [[]]]
-    (when-not (empty? backtrack)
+  (loop [backtrack [[]] executed {}]
+    (if (empty? backtrack)
+      [(count executed) (reduce + (map count (vals executed)))]
       (let [prefix (first backtrack)
             [trace mhb interference] (sim prefix)
             rels (rel/make-rels trace mhb interference)]
         (submit prefix trace rels)
         (recur (dpor/backtrack {:strategy :depth-first
                                 :search-state @search-state
-                                :trace trace}))))))
+                                :trace trace})
+               (update executed (:hb rels) conj trace))))))
