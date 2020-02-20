@@ -38,11 +38,11 @@
                                   (relates? hb ev3 ev))]
                    k)))))
 
-(defn initial-set [pre v {mhb :mhb}]
+(defn initial-set [pre v {hb :hb}]
   (difference (set v)
               (set (for [i (range (count v))
                          j (range i)
-                         :when (relates? mhb (v j) (v i))]
+                         :when (relates? hb (v j) (v i))]
                      (v i)))))
 
 (defn update-backset [search-state trace n j rels]
