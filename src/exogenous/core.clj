@@ -13,7 +13,7 @@
     (if (empty? backtrack)
       [(count executed) (reduce + (map count (vals executed)))]
       (let [prefix (first backtrack)
-            [trace mhb interference] (sim prefix)
+            {:keys [trace mhb interference]} (sim prefix)
             rels (rel/make-rels trace mhb interference)]
         (submit prefix trace rels)
         (recur (dpor/backtrack {:strategy :depth-first
