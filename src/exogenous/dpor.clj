@@ -10,13 +10,13 @@
     (merge-with union node (new-node ev enabled))
     node))
 
-(defn next-sleep-set [node ev sleep {hb :hb}]
+(defn next-sleep-set [node ev sleep {:keys [hb]}]
   (or node
       (->> (remove #(relates? hb ev %) sleep)
            (into #{})
            (assoc node :sleep))))
 
-(defn enabled-after [trace i {mhb :mhb}]
+(defn enabled-after [trace i {:keys [mhb]}]
   (let [pre (set (subvec trace 0 i))
         post (subvec trace i)]
     (->> (filter (fn [ev] (empty? (difference (mhb ev) pre))) post)
@@ -27,7 +27,7 @@
         t (subvec trace (inc i))]
     (filterv #(not (relates? hb ev %)) t)))
 
-(defn reversible-race? [trace n j {:keys [:mhb :interference :hb]}]
+(defn reversible-race? [trace n j {:keys [mhb interference hb]}]
   (let [ev (trace n)
         ev2 (trace j)]
     (and (not (relates? mhb ev2 ev))
@@ -48,7 +48,7 @@
 (defn update-backset [search-state trace n j rels]
   (let [ev1 (trace n)
         pre (subvec trace 0 j)
-        {:keys [:enabled :backset]} (search-state pre)
+        {:keys [enabled backset]} (search-state pre)
         v (conj (not-dep trace j rels) ev1)
         initials (intersection enabled (initial-set pre v rels))]
     (if (empty? (intersection initials backset))
@@ -77,12 +77,12 @@
 
 (defmulti backtrack :strategy)
 
-(defmethod backtrack :all [{:keys [:search-state]}]
-  (-> (fn [[prefix {:keys [:backset :sleep]}]]
+(defmethod backtrack :all [{:keys [search-state]}]
+  (-> (fn [[prefix {:keys [backset sleep]}]]
         (map (partial conj prefix) (difference backset sleep)))
       (mapcat search-state)))
 
-(defmethod backtrack :depth-first [{:keys [:search-state :trace]}]
+(defmethod backtrack :depth-first [{:keys [search-state trace]}]
   (let [backsets (-> (fn [i e]
                        (let [t (subvec trace 0 i)
                              node (search-state t)
@@ -91,8 +91,8 @@
                      (map-indexed trace))]
     (last (filter not-empty backsets))))
 
-(defmethod backtrack :naive [{:keys [:search-state]}]
-  (let [candidates (mapcat (fn [[prefix {:keys [:enabled]}]]
+(defmethod backtrack :naive [{:keys [search-state]}]
+  (let [candidates (mapcat (fn [[prefix {:keys [enabled]}]]
                              (map (partial conj prefix) enabled))
                            search-state)]
     (remove search-state candidates)))
