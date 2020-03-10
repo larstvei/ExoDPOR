@@ -30,6 +30,13 @@
         (update r n union (dfs r n)))
       (reduce r (dom r))))
 
+(defn order-preserving-transitive-closure [r sequence]
+  (-> (fn [r n]
+        (let [i (.indexOf sequence n)
+              elems (filter #(< i (.indexOf % n)) (dfs r n))]
+         (update r n union )))
+      (reduce r (dom r))))
+
 (defn rel-union [r1 r2]
   (-> (fn [r k]
         (reduce #(relate %1 %2 k) r (r2 k)))
@@ -53,7 +60,7 @@
       trace)))
 
 (defn make-rels [trace mhb interference]
-  (let [mhb (transitive-closure (pairs->rel mhb))
+  (let [mhb (order-preserving-transitive-closure (pairs->rel mhb) trace)
         interference (->> (pairs->rel interference)
                           (unsymmetricize-interference trace)
                           (transitive-closure))
