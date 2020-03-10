@@ -42,6 +42,16 @@
           (update r e (fnil difference #{}) occur-after)))
       (reduce r (range (count trace)))))
 
+(defn enabled-candidates [domain visited r]
+  (into #{} (filter #(empty? (difference (r %) visited)) domain)))
+
+(defn linerize [domain hb]
+  (loop [trace []
+         domain domain]
+    (if-let [e (first (enabled-candidates domain (set trace) hb))]
+      (recur (conj trace e) (disj domain e))
+      trace)))
+
 (defn make-rels [trace mhb interference]
   (let [mhb (transitive-closure (pairs->rel mhb))
         interference (->> (pairs->rel interference)

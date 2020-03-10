@@ -1,6 +1,6 @@
 (ns exogenous.dpor
   (:require [clojure.set :refer [union difference intersection]]
-            [exogenous.relations :refer [relates?]]))
+            [exogenous.relations :refer [relates? enabled-candidates]]))
 
 (defn new-node [ev enabled]
   {:backset #{ev} :enabled enabled :blocked #{} :sleep #{}})
@@ -19,8 +19,7 @@
 (defn enabled-after [trace i {:keys [mhb]}]
   (let [pre (set (subvec trace 0 i))
         post (subvec trace i)]
-    (->> (filter (fn [ev] (empty? (difference (mhb ev) pre))) post)
-         (into #{}))))
+    (enabled-candidates post pre mhb)))
 
 (defn not-dep [trace i {hb :hb}]
   (let [ev (trace i)
