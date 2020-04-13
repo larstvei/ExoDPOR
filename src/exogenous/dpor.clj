@@ -26,12 +26,14 @@
         t (subvec trace (inc i))]
     (filterv #(not (relates? hb ev %)) t)))
 
-(defn reversible-race? [trace n j {:keys [mhb interference hb]}]
-  (let [ev (trace n)
+(defn reversible-race? [trace i j {:keys [mhb interference hb]}]
+  (let [ev (trace i)
         ev2 (trace j)]
     (and (not (relates? mhb ev2 ev))
-         (relates? interference ev2 ev)
-         (empty? (for [k (range j (inc n))
+         ;; Should we use hb or interference here?
+         (relates? hb ev2 ev)
+         ;; Here we say j <= k <= j, but should it be j < k < j?
+         (empty? (for [k (range j (inc i))
                        :let [ev3 (trace k)]
                        :when (and (relates? hb ev2 ev3)
                                   (relates? hb ev3 ev))]
@@ -44,20 +46,21 @@
                          :when (relates? hb (v j) (v i))]
                      (v i)))))
 
-(defn update-backset [search-state trace n j rels]
-  (let [ev1 (trace n)
+(defn update-backset [search-state trace i j rels]
+  (let [ev1 (trace i)
         pre (subvec trace 0 j)
-        {:keys [enabled backset]} (search-state pre)
+        {:keys [enabled backset sleep]} (search-state pre)
         v (conj (not-dep trace j rels) ev1)
         initials (intersection enabled (initial-set pre v rels))]
     (if (empty? (intersection initials backset))
-      (update-in search-state [pre :backset] conj (first initials))
+      (update-in search-state [pre :backset] conj
+                 (if (initials ev1) ev1 (first initials)))
       search-state)))
 
-(defn update-backsets [search-state trace n rels]
-  (let [t (subvec trace 0 n)]
-    (->> (filter (fn [j] (reversible-race? trace n j rels)) (range n))
-         (reduce (fn [s j] (update-backset s trace n j rels)) search-state))))
+(defn update-backsets [search-state trace i rels]
+  (let [t (subvec trace 0 i)]
+    (->> (filter (fn [j] (reversible-race? trace i j rels)) (range i))
+         (reduce (fn [s j] (update-backset s trace i j rels)) search-state))))
 
 (defn add-trace [search-state prefix trace rels]
   (-> (fn [s i]
@@ -68,9 +71,9 @@
               node (update-node (s t1) ev enabled)
               next-node (next-sleep-set (s t2) ev (:sleep node) rels)]
           (-> (assoc s t1 node)
-              (update-backsets trace i rels)
+              (update-in [t1 :sleep] conj ev)
               (assoc t2 next-node)
-              (update-in [t1 :sleep] conj ev))))
+              (update-backsets trace i rels))))
       (reduce search-state (range (count trace)))
       (assoc-in [trace :enabled] (enabled-after trace (count trace) rels))))
 
