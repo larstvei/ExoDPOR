@@ -1,117 +1,178 @@
 (ns exogenous.visualize
   (:require [exogenous.core :as exo]
             [quil.core :as q]
-            [clojure.string :refer [upper-case]]
+            [clojure.string :as s]
             [quil.middleware :as m]
             [clojure.set :refer [difference]]
             [render-latex.core :as tex]))
 
 (def rw-regex #"^p(\d+)_\d+_(r|w)\((\d+)\)$")
 
-(def latex
+(def event-short-name
   (memoize
-   (fn [texstr]
-     (let [svgfile (tex/latex->svg texstr)
-           shp (q/load-shape svgfile)]
-       (.disableStyle shp)
-       shp))))
+   (let [id (atom -1)]
+     (fn [_] (apply str "e_" (str (swap! id inc)))))))
 
 (def init-state {[] {}})
 
-(defn setup [& maybe-state]
-  (q/no-stroke)
-  (q/stroke-weight 2)
-  (q/rect-mode :center)
-  (q/text-align :center)
-  (q/shape-mode :center)
-  (if maybe-state
-    (first maybe-state)
-    {:history [@exo/search-state]
-     :pos 0
-     :bg 255
-     :fg 0
-     :pt 5}))
+(defn setup
+  ([] (setup {:steps [@exo/search-state]
+              :pos 0 :bg 255 :fg 0 :pt 5}))
+  ([state]
+   (q/no-stroke)
+   (q/stroke-weight 2)
+   (q/rect-mode :center)
+   (q/text-align :center)
+   (q/shape-mode :center)
+   state))
 
 (defn update-state [state]
   (let [current-state @exo/search-state]
-    (cond (= (peek (:history state)) current-state) state
+    (cond (= (peek (:steps state)) current-state) state
           (= current-state {}) (setup)
-          :else (-> (assoc state :pos (count (:history state)))
-                    (update :history conj current-state)))))
+          :else (-> (assoc state :pos (count (:steps state)))
+                    (update :steps conj current-state)))))
 
-(defn node-x [i n w]
-  (if (= n 1)
-    0
-    (q/map-range i 0 (dec n) (- w) w)))
+;;; Implementation of http://logical.ai/fn.trees/drawingtrees.pdf
+(defn move-tree [tree x]
+  (update tree :x + x))
 
-(defn draw-event [ev x y pt]
-  (let [[_ p o v] (re-matches rw-regex ev)
-        texstr (tex/$ '(:langle) :iota \_ p \, (upper-case o) \( v \) :rangle)]
-    (q/with-translation [x y]
-      (q/scale 1)
-      (q/push-style)
-      (let [shp (latex texstr)]
-        (q/no-stroke)
-        (q/fill 255)
-        (q/rect 0 0 (+ (.-width shp) pt) (+ (.-height shp) pt))
-        (q/fill 0)
-        (q/shape shp))
-      (q/pop-style))))
+(defn move-extent [e x]
+  (map (fn [[p q]] [(+ p x) (+ p x)]) e))
 
-(defn draw-search-state [state path w h pt]
-  (let [{:keys [enabled] :as node} (state path)
-        n (count enabled)
-        w (/ w 2)
-        nw (/ w (/ n 2.0))]
-    (when-not (zero? n)
-      (q/ellipse 0 0 10 10))
-    (doseq [[i ev] (map-indexed vector enabled)]
-      (let [x (node-x i n w)
-            d (q/dist 0 0 x h)
-            a (q/atan2 h x)
-            x0 (* 2 pt (q/cos a))
-            y0 (* 2 pt (q/sin a))
-            x1 (* (/ d 2) (q/cos a))
-            y1 (* (/ d 2) (q/sin a))
-            x2 (* (- d (* 2 pt)) (q/cos a))
-            y2 (* (- d (* 2 pt)) (q/sin a))
-            next-path (conj path ev)]
+(defn merge-extent [[[p _] & ps :as e1] [[_ q] & qs :as e2]]
+  (cond (nil? q) e1
+        (nil? p) e2
+        :else (cons [p q] (merge-extent ps qs))))
 
-        (q/push-style)
-        (q/stroke 0)
-        (when ((:sleep node) ev)
-          (q/stroke 255 0 0))
-        (when ((difference (:backset node) (:sleep node)) ev)
-          (q/stroke 0 255  0))
-        (q/line x0 y0 x1 y1)
-        (when-not (empty? (mapcat identity (vals (state next-path))))          
-          (q/line x1 y1 x2 y2))
-        (q/pop-style)
+(defn merge-extent-list [es]
+  (reduce merge-extent () es))
 
-        (draw-event ev x1 y1 pt)
+(defn rmax [p q]
+  (if (> p q) p q))
 
-        (q/translate x h)
-        (draw-search-state state next-path nw h pt)
-        (q/translate (- x) (- h))))))
+(defn fit-extent [[[_ p] & ps] [[q _] & qs]]
+  (if (and p q)
+    (rmax (+ (- p q) 1.0) (fit-extent ps qs))
+    0.0))
 
-(defn draw [{:keys [history pos bg fg pt]}]
+(defn fit-extent-list-l [es]
+  (letfn [(fitlistl [acc [e & es]]
+            (if (nil? e)
+              ()
+              (let [x (fit-extent acc e)
+                    e2 (merge-extent acc (move-extent e x))]
+                (cons x (fitlistl e2 es)))))]
+    (fitlistl () es)))
+
+(defn flip-extent [es]
+  (map (fn [[p q]] [(- q) (- p)]) es))
+
+(defn fit-extent-list-r [es]
+  (->> (reverse es)
+       (map flip-extent)
+       (fit-extent-list-l)
+       (map -)
+       (reverse)))
+
+(defn mean [x y]
+  (/ (+ x y) 2.0))
+
+(defn fit-extent-list [es]
+  (map mean (fit-extent-list-l es) (fit-extent-list-r es)))
+
+(defn search-state->tree
+  ([state] (search-state->tree state []))
+  ([state path]
+   (let [enabled (get-in state [path :enabled])
+         paths (->> (map #(conj path %) enabled)
+                    (filter state))]
+     {:path path
+      :node (state path)
+      :subtrees (map #(search-state->tree state %) paths)})))
+
+(defn design [state]
+  (letfn [(design-1 [{:keys [subtrees] :as tree}]
+            (let [res (map design-1 subtrees)
+                  trees (map first res)
+                  extents (map second res)
+                  positions (fit-extent-list extents)
+                  ptrees (map move-tree trees positions)
+                  pextents (map move-extent extents positions)
+                  result-extent (cons [0.0 0.0] (merge-extent-list pextents))
+                  result-tree (assoc (assoc tree :x 0.0) :subtrees ptrees)]
+              [result-tree result-extent]))]
+    (first (design-1 state))))
+
+(defn minmax-width
+  ([tree] [(minmax-width min-key tree)
+           (minmax-width max-key tree)])
+  ([f-key {:keys [x subtrees]}]
+   (if (empty? subtrees)
+     x
+     (+ x (/ (minmax-width f-key (apply f-key :x subtrees))
+             (count subtrees))))))
+
+(defn draw-tex-on-white [shp]
+  (q/push-style)
+  (q/no-stroke)
+  (q/fill 255)
+  (q/rect 0 0 (+ 10 (.-width shp)) (+ 10 (.-height shp)))
+  (q/fill 0)
+  (q/shape shp)
+  (q/pop-style))
+
+(defn draw-node [node]
+  (let [enabled (map event-short-name (:enabled node))
+        backset (map event-short-name (:backset node))
+        sleep (map event-short-name (:sleep node))
+        shp (tex/latex
+             (tex/tex
+              '(:begin align*)
+              "E &= \\{" (s/join "," enabled) "\\}\\\\"
+              "B &= \\{" (s/join "," backset) "\\}\\\\"
+              "S &= \\{" (s/join "," sleep) "\\}\\\\"
+              '(:end align*)))]
+    (draw-tex-on-white shp)))
+
+(defn draw-tree [{:keys [path node subtrees x]} space h]
+  (let [nspace (/ space (max 1 (count subtrees)))]
+    (doseq [t subtrees]
+      (let [x1 (* nspace (:x t))
+            label (tex/$ (event-short-name (last (:path t))))]
+        (q/line 0 0 x1 h)
+        (q/with-translation [(/ x1 2) (/ h 2)]
+          (draw-tex-on-white (tex/latex label)))
+        (q/with-translation [x1 h]
+          (draw-tree t nspace h)))))
+  (draw-node node))
+
+(defn draw [{:keys [steps pos bg fg pt info]}]
   (q/background bg)
   (q/fill fg)
-  (let [search-state (history pos)
+  (when info
+    (q/text (str "fps: " (int (q/current-frame-rate))) 50 20))
+  (let [search-state (steps pos)
         pad (* 0.05 (max (q/width) (q/height)))
         lengths (map count (keys search-state))
+        tree (design (search-state->tree search-state))
         depth (apply max 1 lengths)
         h (/ (- (q/height) (* 2 pad)) depth)
-        w (/ (- (q/width) (* 2 pad)) 1.5)]
-    (q/translate (/ (q/width) 2) pad)
-    (draw-search-state search-state [] w h pt)))
+        w (- (q/width) (* 2 pad))
+        [minwidth maxwidth] (minmax-width tree)
+        offset (if (= minwidth maxwidth)
+                 (/ w 2)
+                 (q/map-range 0 minwidth maxwidth 0 w))]
+    (q/translate (+ offset pad) pad)
+    (q/stroke 0)
+    (draw-tree tree (/ w 1.2) h)))
 
 (defn render-pdf [state]
   (let [w (* (q/display-density) (q/width))
         h (* (q/display-density) (q/height))
         path "resources/screenshots/out-%02d.pdf"]
     (clojure.java.io/make-parents path)
-    (dotimes [pos (count (:history state))]
+    (dotimes [pos (count (:steps state))]
       (q/do-record
        (q/create-graphics w h :pdf (format path pos))
        (draw (setup (assoc state :pos pos))))))
@@ -120,10 +181,11 @@
 (defn key-handler [state event]
   (case (q/key-as-keyword)
     :r (setup)
-    :right (update state :pos #(mod (inc %) (count (:history state))))
-    :left (update state :pos #(mod (dec %) (count (:history state))))
+    :right (update state :pos #(mod (inc %) (count (:steps state))))
+    :left (update state :pos #(mod (dec %) (count (:steps state))))
     :w (-> (assoc state :bg 255) (assoc :fg 0))
     :b (-> (assoc state :bg 0) (assoc :fg 255))
+    :i (update state :info not)
     :s (render-pdf state)
     state))
 
@@ -137,7 +199,7 @@
     :draw draw
     :key-pressed key-handler
     :settings (fn [] (q/pixel-density (q/display-density)))
-    :renderer :p2d
+    ;;   :renderer :p2d
     :features [:no-bind-output :resizable]
     :middleware [m/fun-mode]))
 
