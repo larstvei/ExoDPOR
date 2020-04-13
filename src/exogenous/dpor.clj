@@ -91,7 +91,20 @@
                              backtrack (difference (:backset node) (:sleep node))]
                          (map (partial conj t) backtrack)))
                      (map-indexed trace))]
-    (last (filter not-empty backsets))))
+    (last (filter (complement empty?) backsets))))
+
+(defmethod backtrack :random [options]
+  (let [candidates (backtrack (assoc options :strategy :all))]
+    (when-not (empty? candidates)
+      (list (rand-nth candidates)))))
+
+(defmethod backtrack :sleep-only [{:keys [search-state]}]
+  (let [candidates (mapcat (fn [[prefix {:keys [enabled sleep]}]]
+                             (map (partial conj prefix)
+                                  (difference enabled sleep)))
+                           search-state)]
+    (assert (= candidates (remove search-state candidates)))
+    candidates))
 
 (defmethod backtrack :naive [{:keys [search-state]}]
   (let [candidates (mapcat (fn [[prefix {:keys [enabled]}]]
