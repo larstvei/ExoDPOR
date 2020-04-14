@@ -32,8 +32,7 @@
     (and (not (relates? mhb ev2 ev))
          ;; Should we use hb or interference here?
          (relates? hb ev2 ev)
-         ;; Here we say j <= k <= j, but should it be j < k < j?
-         (empty? (for [k (range j (inc i))
+         (empty? (for [k (range (inc j) i)
                        :let [ev3 (trace k)]
                        :when (and (relates? hb ev2 ev3)
                                   (relates? hb ev3 ev))]
