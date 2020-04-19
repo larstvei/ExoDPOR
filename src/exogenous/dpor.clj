@@ -61,7 +61,7 @@
     (->> (filter (fn [j] (reversible-race? trace i j rels)) (range i))
          (reduce (fn [s j] (update-backset s trace i j rels)) search-state))))
 
-(defn add-trace [search-state prefix trace rels]
+(defn add-trace [search-state seed-trace trace rels]
   (-> (fn [s i]
         (let [t1 (subvec trace 0 i)
               t2 (subvec trace 0 (inc i))
@@ -76,37 +76,23 @@
       (reduce search-state (range (count trace)))
       (assoc-in [trace :enabled] (enabled-after trace (count trace) rels))))
 
-(defmulti backtrack :strategy)
+(defmulti backtrack :backtracking)
 
-(defmethod backtrack :all [{:keys [search-state]}]
-  (-> (fn [[prefix {:keys [backset sleep]}]]
-        (map (partial conj prefix) (difference backset sleep)))
-      (mapcat search-state)))
-
-(defmethod backtrack :depth-first [{:keys [search-state trace]}]
-  (let [backsets (-> (fn [i e]
-                       (let [t (subvec trace 0 i)
-                             node (search-state t)
-                             backtrack (difference (:backset node) (:sleep node))]
-                         (map (partial conj t) backtrack)))
-                     (map-indexed trace))]
-    (last (filter (complement empty?) backsets))))
-
-(defmethod backtrack :random [options]
-  (let [candidates (backtrack (assoc options :strategy :all))]
-    (when-not (empty? candidates)
-      (list (rand-nth candidates)))))
+(defmethod backtrack :backsets [{:keys [search-state]}]
+  (-> (fn [[seed-trace {:keys [backset sleep]}]]
+        (map (partial conj seed-trace) (difference backset sleep)))
+      (mapcat search-state)
+      set))
 
 (defmethod backtrack :sleep-only [{:keys [search-state]}]
-  (let [candidates (mapcat (fn [[prefix {:keys [enabled sleep]}]]
-                             (map (partial conj prefix)
+  (let [candidates (mapcat (fn [[seed-trace {:keys [enabled sleep]}]]
+                             (map (partial conj seed-trace)
                                   (difference enabled sleep)))
                            search-state)]
-    (assert (= candidates (remove search-state candidates)))
-    candidates))
+    (set candidates)))
 
 (defmethod backtrack :naive [{:keys [search-state]}]
-  (let [candidates (mapcat (fn [[prefix {:keys [enabled]}]]
-                             (map (partial conj prefix) enabled))
+  (let [candidates (mapcat (fn [[seed-trace {:keys [enabled]}]]
+                             (map (partial conj seed-trace) enabled))
                            search-state)]
-    (remove search-state candidates)))
+    (set (remove search-state candidates))))

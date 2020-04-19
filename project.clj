@@ -6,5 +6,6 @@
   :dependencies [[org.clojure/clojure "1.10.1"]
                  [org.clojure/test.check "0.10.0"]
                  [render-latex "0.1.0-SNAPSHOT"]
-                 [quil "3.1.0"]]
+                 [quil "3.1.0"]
+                 [org.clojure/core.async "1.1.587"]]
   :repl-options {:init-ns exogenous.core})
