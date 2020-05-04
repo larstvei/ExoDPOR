@@ -6,8 +6,6 @@
             [clojure.set :refer [difference]]
             [render-latex.core :as tex]))
 
-(def rw-regex #"^p(\d+)_\d+_(r|w)\((\d+)\)$")
-
 (def event-short-name
   (memoize
    (let [id (atom -1)]
