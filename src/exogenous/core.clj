@@ -35,6 +35,9 @@
 (defmethod select :random [{:keys [candidates n]}]
   (set (take n (shuffle candidates))))
 
+(defmethod select :default [options]
+  ((:strategy options) options))
+
 ;; Synchronous variant
 (defn explore-synchronous
   ([sim] (explore-synchronous sim {}))
