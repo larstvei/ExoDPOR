@@ -43,7 +43,7 @@
    (let [options (merge default-options options)]
      (loop [backtrack [[]] stats {}]
        (if (empty? backtrack)
-         [(count stats) (reduce + (map count (vals stats)))]
+         stats
          (let [seed-trace (first backtrack)
                {:keys [trace mhb interference]} (sim seed-trace)
                rels (rel/make-rels trace mhb interference)]
@@ -61,6 +61,7 @@
          c (async/chan)]
      (loop [seeds #{[]}
             active-jobs #{}
+            ;; TODO: record number of candidate seed traces during search
             stats {}]
        (cond
          ;; If we are saturated, block and continue when a job is completed
@@ -88,4 +89,4 @@
                   stats))
 
          (and (empty? seeds) (empty? active-jobs))
-         [(count stats) (reduce + (map count (vals stats)))])))))
+         stats)))))
