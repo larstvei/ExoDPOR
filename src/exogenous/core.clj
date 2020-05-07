@@ -5,8 +5,8 @@
 
 (def default-options {:strategy :random
                       :backtracking :backsets
-                      :workers (.availableProcessors
-                                (Runtime/getRuntime))})
+                      :workers (* 2 (.availableProcessors
+                                     (Runtime/getRuntime)))})
 
 (def search-state (atom {}))
 
