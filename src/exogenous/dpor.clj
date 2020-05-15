@@ -2,8 +2,8 @@
   (:require [clojure.set :refer [union difference intersection]]
             [exogenous.relations :refer [relates? enabled-candidates]]))
 
-(defn new-node [ev enabled]
-  {:backset #{ev} :enabled enabled :blocked #{} :sleep #{}})
+(defn new-node [ev enabled sleep]
+  {:backset #{ev} :enabled enabled :blocked #{} :sleep sleep})
 
 (defn enabled-after [trace i {:keys [mhb]}]
   (let [pre (set (subvec trace 0 i))
@@ -13,15 +13,15 @@
 (defn update-node [ss trace i {:keys [hb] :as rels}]
   (let [pre (subvec trace 0 i)
         ev (trace i)
-        node (ss pre)]
-    (if-not node
-      (new-node ev (enabled-after trace i rels))
-      (let [new-backset (conj (:backset node) ev)
-            prev-sleep (if (empty? pre) #{} (:sleep (ss (pop pre))))
-            new-sleep (set (remove #(relates? hb ev %) prev-sleep))]
-        (-> node
-            (assoc :backset new-backset)
-            (update :sleep union new-sleep))))))
+        node (ss pre)
+        enabled (enabled-after trace i rels)]
+    (cond (zero? i) (new-node ev enabled #{})
+          node (update node :backset conj ev)
+          :else (let [prev (subvec trace 0 (dec i))
+                      prev-ev (last prev)
+                      prev-sleep (disj (:sleep (ss prev)) prev-ev)
+                      new-sleep (remove #(relates? hb prev-ev %) prev-sleep)]
+                  (new-node ev enabled (set new-sleep))))))
 
 (defn not-dep [trace i {hb :hb}]
   (let [ev (trace i)
