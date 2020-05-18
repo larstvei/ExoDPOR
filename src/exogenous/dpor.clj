@@ -15,8 +15,8 @@
         ev (trace i)
         node (ss pre)
         enabled (enabled-after trace i rels)]
-    (cond (zero? i) (new-node ev enabled #{})
-          node (update node :backset conj ev)
+    (cond node (update node :backset conj ev)
+          (zero? i) (new-node ev enabled #{})
           :else (let [prev (subvec trace 0 (dec i))
                       prev-ev (last prev)
                       prev-sleep (disj (:sleep (ss prev)) prev-ev)
