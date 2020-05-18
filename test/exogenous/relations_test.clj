@@ -74,6 +74,15 @@
    (= (transitive-closure r)
       (#'exogenous.relations/transitive-closure-floyd-warshall r))))
 
+(def transitive-relate*
+  (prop/for-all
+   [pairs pairs-gen]
+   (let [r (pairs->rel pairs)
+         r* (transitive-closure r)]
+     (->> (for [a (dom r) b (dom r)]
+            (= (relates? r* a b) (relates*? r a b)))
+          (every? identity)))))
+
 (def union-prop
   (prop/for-all
    [r1 pairs-gen
@@ -87,4 +96,5 @@
   (t/is (= true (:pass? (tc/quick-check 100 isomorphic-prop))))
   (t/is (= true (:pass? (tc/quick-check 100 union-prop))))
   (t/is (= true (:pass? (tc/quick-check 20 transitive-prop))))
+  (t/is (= true (:pass? (tc/quick-check 20 transitive-relate*))))
   (t/is (= true (:pass? (tc/quick-check 20 transitive-equiv-impl-prop)))))

@@ -25,6 +25,11 @@
   ([r s vs] (-> (fn [vs n] (into vs (dfs r n vs)))
                 (reduce (union (r s) vs) (difference (r s) vs)))))
 
+(defn relates*? [r a b]
+  ;; TODO: Make order-preserving version for ABS
+  (or (relates? r a b)
+      (relates? (update r b union (dfs r b)) a b)))
+
 (defn transitive-closure [r]
   (-> (fn [r n]
         (update r n union (dfs r n)))
