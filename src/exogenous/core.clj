@@ -10,14 +10,13 @@
 
 (def search-state (atom {}))
 
-(defn submit [seed-trace trace rels]
+(defn submit! [seed-trace trace rels]
   (swap! search-state dpor/add-trace seed-trace trace rels))
 
 (defn execute [sim seed-trace]
   (let [{:keys [trace mhb interference]} (sim seed-trace)
         rels (rel/make-rels trace mhb interference)]
-    (submit seed-trace trace rels)
-    (merge rels {:seed-trace seed-trace :trace trace})))
+    (assoc {:seed-trace seed-trace :trace trace} :rels rels)))
 
 (defn- longest-common-prefix [[x & xs] [y & ys]]
   (if (and x y (= x y))
@@ -50,7 +49,7 @@
          (let [seed-trace (first backtrack)
                {:keys [trace mhb interference]} (sim seed-trace)
                rels (rel/make-rels trace mhb interference)]
-           (submit seed-trace trace rels)
+           (submit! seed-trace trace rels)
            (let [candidates (dpor/backtrack (assoc options :search-state @search-state))]
              (recur (select (merge options {:n 1 :candidates candidates}))
                     (update stats (:hb rels) conj trace)))))))))
@@ -71,12 +70,13 @@
          (and (not (empty? active-jobs))
               (or (= (count active-jobs) (:workers options))
                   (empty? seeds)))
-         (let [res (async/<!! c)
+         (let [{:keys [:seed-trace :trace :rels]} (async/<!! c)
+               _ (submit! seed-trace trace rels)
                candidates (dpor/backtrack
                            (assoc options :search-state @search-state))]
            (recur (set (remove active-jobs candidates))
-                  (disj active-jobs (:seed-trace res))
-                  (update stats (:hb res) conj (:trace res))))
+                  (disj active-jobs seed-trace)
+                  (update stats (:hb rels) conj trace)))
 
          ;; We are not saturated, and there is more work to do
          (not (empty? seeds))
