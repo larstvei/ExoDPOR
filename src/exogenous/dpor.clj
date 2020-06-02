@@ -2,26 +2,24 @@
   (:require [clojure.set :refer [union difference intersection]]
             [exogenous.relations :refer [relates? enabled-candidates]]))
 
-(defn new-node [ev enabled sleep]
-  {:backset #{ev} :enabled enabled :blocked #{} :sleep sleep})
+(defn new-node [ev enabled]
+  {:backset #{ev} :enabled enabled :blocked #{} :sleep #{}})
+
+(defn update-node [node ev enabled]
+  (if (empty? (:backset node))
+    (merge-with union node (new-node ev enabled))
+    node))
+
+(defn next-sleep-set [node ev sleep {:keys [hb]}]
+  (or node
+      (->> (remove #(relates? hb ev %) sleep)
+           (into #{})
+           (assoc node :sleep))))
 
 (defn enabled-after [trace i {:keys [mhb]}]
   (let [pre (set (subvec trace 0 i))
         post (subvec trace i)]
     (enabled-candidates post pre mhb)))
-
-(defn update-node [ss trace i {:keys [hb] :as rels}]
-  (let [pre (subvec trace 0 i)
-        ev (trace i)
-        node (ss pre)
-        enabled (enabled-after trace i rels)]
-    (cond node (update node :backset conj ev)
-          (zero? i) (new-node ev enabled #{})
-          :else (let [prev (subvec trace 0 (dec i))
-                      prev-ev (last prev)
-                      prev-sleep (disj (:sleep (ss prev)) prev-ev)
-                      new-sleep (remove #(relates? hb prev-ev %) prev-sleep)]
-                  (new-node ev enabled (set new-sleep))))))
 
 (defn not-dep [trace i {hb :hb}]
   (let [ev (trace i)
@@ -61,15 +59,19 @@
 (defn update-backsets [search-state trace i rels]
   (let [t (subvec trace 0 i)]
     (->> (filter (fn [j] (reversible-race? trace i j rels)) (range i))
-         (reduce (fn [ss j] (update-backset ss trace i j rels)) search-state))))
+         (reduce (fn [s j] (update-backset s trace i j rels)) search-state))))
 
 (defn add-trace [search-state seed-trace trace rels]
-  (-> (fn [ss i]
-        (let [pre (subvec trace 0 i)
+  (-> (fn [s i]
+        (let [t1 (subvec trace 0 i)
+              t2 (subvec trace 0 (inc i))
               ev (trace i)
-              node (update-node ss trace i rels)]
-          (-> (assoc ss pre node)
-              (update-in [pre :sleep] conj ev)
+              enabled (enabled-after trace i rels)
+              node (update-node (s t1) ev enabled)
+              next-node (next-sleep-set (s t2) ev (:sleep node) rels)]
+          (-> (assoc s t1 node)
+              (update-in [t1 :sleep] conj ev)
+              (assoc t2 next-node)
               (update-backsets trace i rels))))
       (reduce search-state (range (count trace)))
       (assoc-in [trace :enabled] (enabled-after trace (count trace) rels))))
