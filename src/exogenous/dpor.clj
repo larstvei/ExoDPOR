@@ -57,9 +57,8 @@
       search-state)))
 
 (defn update-backsets [search-state trace i rels]
-  (let [t (subvec trace 0 i)]
-    (->> (filter (fn [j] (reversible-race? trace i j rels)) (range i))
-         (reduce (fn [s j] (update-backset s trace i j rels)) search-state))))
+  (->> (filter (fn [j] (reversible-race? trace i j rels)) (range i))
+       (reduce (fn [s j] (update-backset s trace i j rels)) search-state)))
 
 (defn add-trace [search-state seed-trace trace rels]
   (-> (fn [s i]
