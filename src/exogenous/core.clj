@@ -93,3 +93,17 @@
 
          (and (empty? seeds) (empty? active-jobs))
          stats)))))
+
+(defn informed-explore
+  ([sim] (informed-explore sim {}))
+  ([sim options]
+   (let [start-time (. System (nanoTime))
+         stats (explore sim options)
+         end-time (. System (nanoTime))
+         time-ms (/ (double (- end-time start-time)) 1000000.0)
+         classes-explored (count stats)
+         executions-explored (reduce + (map count (vals stats)))]
+     {:executions-explored (reduce + (map count (vals stats)))
+      :equivalence-classes-explored classes-explored
+      :time-ms time-ms
+      :options options})))
