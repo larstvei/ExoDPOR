@@ -8,8 +8,14 @@
 
 (def event-short-name
   (memoize
-   (let [id (atom -1)]
-     (fn [_] (apply str "e_" (str (swap! id inc)))))))
+   (let [id (atom 3)]
+     (fn [ev]
+       (or
+        ({{:thread 0, :tag 0, :op :r, :x 0, :ms 100} "e_0"
+          {:thread 1, :tag 0, :op :w, :x 0, :ms 100} "e_1"
+          {:thread 2, :tag 0, :op :r, :x 0, :ms 100} "e_2"
+          {:thread 2, :tag 1, :op :r, :x 1, :ms 100} "e_3"} ev)
+        (apply str "e_" (str (swap! id inc))))))))
 
 (def init-state {[] {}})
 
@@ -87,7 +93,8 @@
                     (filter state))]
      {:path path
       :node (state path)
-      :subtrees (map #(search-state->tree state %) paths)})))
+      :subtrees (->> (sort-by (comp event-short-name last) paths)
+                     (map #(search-state->tree state %)))})))
 
 (defn design [state]
   (letfn [(design-1 [{:keys [subtrees] :as tree}]
@@ -121,9 +128,9 @@
   (q/pop-style))
 
 (defn draw-node [node]
-  (let [enabled (map event-short-name (:enabled node))
-        backset (map event-short-name (:backset node))
-        sleep (map event-short-name (:sleep node))
+  (let [enabled (sort (map event-short-name (:enabled node)))
+        backset (sort (map event-short-name (:backset node)))
+        sleep (sort (map event-short-name (:sleep node)))
         shp (tex/latex
              (tex/tex
               '(:begin align*)
@@ -145,6 +152,27 @@
           (draw-tree t nspace h)))))
   (draw-node node))
 
+(defn event-str [{:keys [thread tag op x]}]
+  (tex/tex :langle
+           :iota \_ (inc thread) \,
+           "t_" (inc tag) \,
+           (if (= op :r) "R" "W") \,
+           (or ((zipmap (range) "xyzw") x) (str "x_{" x "}"))
+           :rangle))
+
+(defn draw-event-names [offset ss]
+  (let [events (distinct (flatten (keys ss)))
+        short-names (vec (map event-short-name events))
+        m (sort-by first (zipmap short-names events))
+        shp (tex/latex
+             (tex/tex
+              '(:begin align*)
+              (for [[id ev] m]
+                (str id " &= " (event-str ev) "\\\\"))
+              '(:end align*)))]
+    (q/with-translation [(- (* 0.85 offset)) 0]
+      (draw-tex-on-white shp))))
+
 (defn draw [{:keys [steps pos bg fg pt info]}]
   (q/background bg)
   (q/fill fg)
@@ -162,6 +190,7 @@
                  (/ w 2)
                  (q/map-range 0 minwidth maxwidth 0 w))]
     (q/translate (+ offset pad) pad)
+    (draw-event-names offset search-state)
     (q/stroke 0)
     (draw-tree tree (/ w 1.2) h)))
 
