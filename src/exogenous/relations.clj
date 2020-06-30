@@ -57,12 +57,12 @@
 (defn enabled-candidates [domain visited r]
   (into #{} (filter #(empty? (difference (r %) visited)) domain)))
 
-(defn linerize [domain hb]
-  (loop [trace []
-         domain domain]
-    (if-let [e (first (enabled-candidates domain (set trace) hb))]
-      (recur (conj trace e) (disj domain e))
-      trace)))
+(defn linerize
+  ([domain hb] (linerize domain hb []))
+  ([domain hb trace]
+   (if-let [e (first (enabled-candidates domain (set trace) hb))]
+     (recur (disj domain e) hb (conj trace e))
+     trace)))
 
 (defn make-mhb [pairs trace]
   (order-preserving-transitive-closure (pairs->rel pairs) trace))
