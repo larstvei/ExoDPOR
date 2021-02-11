@@ -26,10 +26,13 @@
         t (subvec trace (inc i))]
     (filterv #(not (relates? hb ev %)) t)))
 
-(defn reversible-race? [trace i j {:keys [mhb interference hb]}]
+(defn reversible-race? [search-state trace i j {:keys [mhb interference hb]}]
   (let [ev (trace i)
-        ev2 (trace j)]
-    (and (not (relates? mhb ev2 ev))
+        ev2 (trace j)
+        pre (subvec trace 0 j)
+        {:keys [enabled]} (search-state pre)]
+    (and (enabled ev)
+         (not (relates? mhb ev2 ev))
          ;; Should we use hb or interference here?
          (relates? hb ev2 ev)
          (empty? (for [k (range (inc j) i)
@@ -57,7 +60,7 @@
       search-state)))
 
 (defn update-backsets [search-state trace i rels]
-  (->> (filter (fn [j] (reversible-race? trace i j rels)) (range i))
+  (->> (filter (fn [j] (reversible-race? search-state trace i j rels)) (range i))
        (reduce (fn [s j] (update-backset s trace i j rels)) search-state)))
 
 (defn add-trace [search-state seed-trace trace enabled-disabled rels]
