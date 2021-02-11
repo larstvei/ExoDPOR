@@ -48,11 +48,16 @@
       (reduce r1 (keys r2))))
 
 (defn unsymmetricize-interference [trace r]
-  (-> (fn [r i]
-        (let [e (trace i)
-              occur-after (set (subvec trace i))]
-          (update r e (fnil difference #{}) occur-after)))
-      (reduce r (range (count trace)))))
+  ;; What do we want to do with the events that don't appear in the trace? It
+  ;; seems reasonable to consider the events that aren't scheduled at all as
+  ;; happening after all events that reside in the trace. The choice may be
+  ;; arbitrary.
+  (let [blocked (difference (dom r) (set trace))]
+    (-> (fn [r i]
+          (let [e (trace i)
+                occur-after (into blocked (subvec trace i))]
+            (update r e (fnil difference #{}) occur-after)))
+        (reduce r (range (count trace))))))
 
 (defn enabled-candidates [domain visited r]
   (into #{} (filter #(empty? (difference (r %) visited)) domain)))

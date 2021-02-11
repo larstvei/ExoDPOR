@@ -10,13 +10,14 @@
 
 (def search-state (atom {}))
 
-(defn submit! [seed-trace trace rels]
-  (swap! search-state dpor/add-trace seed-trace trace rels))
+(defn submit! [seed-trace trace enabled-disabled rels]
+  (swap! search-state dpor/add-trace seed-trace trace enabled-disabled rels))
 
 (defn execute [sim seed-trace]
-  (let [{:keys [trace mhb interference]} (sim seed-trace)
+  (let [{:keys [trace mhb interference enabled-disabled]} (sim seed-trace)
         rels (rel/make-rels trace mhb interference)]
-    (assoc {:seed-trace seed-trace :trace trace} :rels rels)))
+    {:seed-trace seed-trace :trace trace :rels rels
+     :enabled-disabled enabled-disabled}))
 
 (defn- longest-common-prefix [[x & xs] [y & ys]]
   (if (and x y (= x y))
@@ -47,9 +48,9 @@
        (if (empty? backtrack)
          stats
          (let [seed-trace (first backtrack)
-               {:keys [trace mhb interference]} (sim seed-trace)
+               {:keys [trace mhb interference enabled-disabled]} (sim seed-trace)
                rels (rel/make-rels trace mhb interference)]
-           (submit! seed-trace trace rels)
+           (submit! seed-trace trace enabled-disabled rels)
            (let [candidates (dpor/backtrack (assoc options :search-state @search-state))]
              (recur (select (merge options {:n 1 :candidates candidates}))
                     (update stats (:hb rels) conj trace)))))))))
@@ -70,8 +71,8 @@
          (and (not (empty? active-jobs))
               (or (= (count active-jobs) (:workers options))
                   (empty? seeds)))
-         (let [{:keys [:seed-trace :trace :rels]} (async/<!! c)
-               _ (submit! seed-trace trace rels)
+         (let [{:keys [seed-trace trace enabled-disabled rels] :as m} (async/<!! c)
+               _ (submit! seed-trace trace enabled-disabled rels)
                candidates (dpor/backtrack
                            (assoc options :search-state @search-state))]
            (recur (set (remove active-jobs candidates))
