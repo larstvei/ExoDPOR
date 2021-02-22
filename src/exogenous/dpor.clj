@@ -36,6 +36,11 @@
                                   (relates? hb ev3 ev))]
                    k)))))
 
+(defn disables? [search-state pre ev1 ev2]
+  (let [{enabled-before :enabled} (search-state pre)
+        {disabled-after :disabled} (search-state (conj pre ev1))]
+    (and (enabled-before ev2) (disabled-after ev2))))
+
 (defn initial-set [pre v {hb :hb}]
   (difference (set v)
               (set (for [i (range (count v))
@@ -46,7 +51,7 @@
 (defn update-backset [search-state trace i j rels]
   (let [ev1 (trace i)
         pre (subvec trace 0 j)
-        {:keys [enabled backset sleep]} (search-state pre)
+        {:keys [enabled backset]} (search-state pre)
         v (conj (not-dep trace j rels) ev1)
         initials (intersection enabled (initial-set pre v rels))]
     (if (empty? (intersection initials backset))
@@ -58,18 +63,36 @@
   (->> (filter (fn [j] (reversible-race? search-state trace i j rels)) (range i))
        (reduce (fn [s j] (update-backset s trace i j rels)) search-state)))
 
+(defn update-blocking [search-state trace i j disabled-event rels]
+  (let [ev1 (trace j)
+        pre (subvec trace 0 j)]
+    (if (disables? search-state pre ev1 disabled-event)
+      (let [trick-trace (assoc trace i disabled-event)]
+        ;; Note that this trace puts the disabled event at the position where
+        ;; it is disabled. This is just a trick so that we can reuse the logic
+        ;; from update-backset.
+        (update-backset search-state trick-trace i j rels))
+      search-state)))
+
+(defn trigger-disabled [search-state trace i rels]
+  (let [pre (subvec trace 0 i)]
+    (-> (fn [ss ev]
+          (-> (fn [ss j] (update-blocking ss trace i j ev rels))
+              (reduce ss (range i))))
+        (reduce search-state (get-in search-state [pre :disabled])))))
+
 (defn add-trace [search-state seed-trace trace enabled-disabled rels]
   (-> (fn [s i]
         (let [t1 (subvec trace 0 i)
               t2 (subvec trace 0 (inc i))
               ev (trace i)
-              ;; enabled (or (:enabled (get enabled-disabled i)) (enabled-after trace i rels))
               {:keys [enabled disabled]} (get enabled-disabled i)
               node (update-node (s t1) ev enabled disabled)
               next-node (next-sleep-set (s t2) ev (:sleep node) rels)]
           (-> (assoc s t1 node)
               (update-in [t1 :sleep] conj ev)
               (assoc t2 next-node)
+              (trigger-disabled trace i rels)
               (update-backsets trace i rels))))
       (reduce search-state (range (count trace)))
       (assoc-in [trace :enabled] (:enabled (get enabled-disabled (count trace))))
