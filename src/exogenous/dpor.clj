@@ -25,8 +25,8 @@
   (let [ev (trace i)
         ev2 (trace j)
         pre (subvec trace 0 j)
-        {:keys [enabled]} (search-state pre)]
-    (and (enabled ev)
+        {:keys [disabled]} (search-state pre)]
+    (and (not (disabled ev))
          (not (relates? mhb ev2 ev))
          ;; Should we use hb or interference here?
          (relates? hb ev2 ev)
