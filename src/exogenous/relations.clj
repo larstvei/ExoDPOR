@@ -35,13 +35,6 @@
         (update r n union (dfs r n)))
       (reduce r (dom r))))
 
-(defn order-preserving-transitive-closure [r sequence]
-  (-> (fn [r n]
-        (let [i (.indexOf sequence n)
-              elems (filter #(< i (.indexOf % n)) (dfs r n))]
-          (update r n union)))
-      (reduce r (dom r))))
-
 (defn rel-union [r1 r2]
   (-> (fn [r k]
         (reduce #(relate %1 %2 k) r (r2 k)))
@@ -69,16 +62,14 @@
      (recur (disj domain e) hb (conj trace e))
      trace)))
 
-(defn make-mhb [pairs trace]
-  (order-preserving-transitive-closure (pairs->rel pairs) trace))
-
-(defn make-interference [pairs trace]
-  (->> (pairs->rel pairs)
+(defn make-interference [interference trace]
+  (->> interference
        (unsymmetricize-interference trace)
        (transitive-closure)))
 
 (defn make-rels [trace mhb interference]
-  (let [mhb (make-mhb mhb trace)
+  (let [mhb (transitive-closure (if (map? mhb) mhb (pairs->rel mhb)))
+        interference (if (map? interference) interference (pairs->rel interference))
         interference (make-interference interference trace)
         hb (transitive-closure (rel-union mhb interference))]
     {:mhb mhb :interference interference :hb hb}))
