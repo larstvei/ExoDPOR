@@ -41,7 +41,7 @@
         {disabled-after :disabled} (search-state (conj pre ev1))]
     (and (enabled-before ev2) (disabled-after ev2))))
 
-(defn initial-set [pre v {hb :hb}]
+(defn initial-set [v {hb :hb}]
   (difference (set v)
               (set (for [i (range (count v))
                          j (range i)
@@ -53,7 +53,7 @@
         pre (subvec trace 0 j)
         {:keys [enabled backset]} (search-state pre)
         v (conj (not-dep trace j rels) ev1)
-        initials (intersection enabled (initial-set pre v rels))]
+        initials (intersection enabled (initial-set v rels))]
     (if (empty? (intersection initials backset))
       (update-in search-state [pre :backset] conj
                  (if (initials ev1) ev1 (first initials)))
