@@ -22,6 +22,9 @@
 (t/deftest initials
   (t/is (= #{:q1} (initial-set w rels))))
 
+(t/deftest weak-initials
+  (t/is (= #{:q1 :r1} (weak-initial-set w #{:q1 :r1} rels))))
+
 (t/deftest add-a-trace
   (let [result (add-trace {} [] trace enabled-disabled rels)]
     (t/is (= {[]

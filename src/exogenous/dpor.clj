@@ -48,6 +48,13 @@
                          :when (relates? hb (v j) (v i))]
                      (v i)))))
 
+(defn weak-initial-set [v enabled {hb :hb :as rels}]
+  (union (initial-set v rels)
+         (set (for [e enabled
+                    e2 v
+                    :when (not (relates? hb e e2))]
+                e))))
+
 (defn update-backset [search-state trace i j rels]
   (let [ev1 (trace i)
         pre (subvec trace 0 j)
