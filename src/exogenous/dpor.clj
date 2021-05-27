@@ -192,17 +192,18 @@
   "Given a `search-state` and a `trace`, return a `search-state` where all paths
   that are a prefix of `trace` mark it's next event as visited. Marking as
   visited means that the next event is added to the sleep set, and all
-  extensions starting with the event is removed.
-
-  TODO: Is this correct? Do we mark nodes as visited too soon?"
+  extensions starting with the event is removed."
   [search-state trace]
   (-> (fn [ss i]
-        (let [pre (subvec trace 0 i)
-              ev (trace i)
-              {:keys [::extensions]} (search-state pre)
-              new-extensions (set (remove #(= ev (first %)) extensions))]
-          (-> (update-in ss [pre ::sleep] conj ev)
-              (assoc-in [pre ::extensions] new-extensions))))
+        (let [next-node (ss (subvec trace 0 (inc i)))]
+          (if (empty? (::extensions next-node))
+            (let [pre (subvec trace 0 i)
+                  ev (trace i)
+                  {:keys [::extensions]} (search-state pre)
+                  new-extensions (set (remove #(= ev (first %)) extensions))]
+              (-> (update-in ss [pre ::sleep] conj ev)
+                  (assoc-in [pre ::extensions] new-extensions)))
+            ss)))
       (reduce search-state (range (count trace)))))
 
 (defn add-trace
@@ -229,10 +230,10 @@
   :backtracking)
 
 (defmethod backtrack :optimal [{:keys [search-state]}]
-  (-> (fn [[seed-trace {:keys [::extensions]}]]
-        (map (partial into seed-trace) extensions))
-      (mapcat search-state)
-      set))
+  (let [candidates (mapcat (fn [[seed-trace {:keys [::extensions]}]]
+                             (map (partial into seed-trace) extensions))
+                           search-state)]
+    (set (remove search-state candidates))))
 
 (defmethod backtrack :naive [{:keys [search-state]}]
   (let [candidates (mapcat (fn [[seed-trace {:keys [::enabled]}]]
