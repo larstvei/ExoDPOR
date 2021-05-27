@@ -142,11 +142,12 @@
   starts with `ev` with `ev` itself removed."
   [ev parent {:keys [hb]} {:keys [enabled disabled]}]
   (let [sleep (set (remove #(relates? hb ev %) (::sleep parent)))
-        extensions (->> (::extensions parent)
-                        (filter #(= ev (first %)))
-                        (map (comp vec rest))
-                        (remove empty?)
-                        (into #{}))]
+        extensions (set (or (->> (::extensions parent)
+                                 (filter #(= ev (first %)))
+                                 (map (comp vec rest))
+                                 (remove empty?)
+                                 seq)
+                            #{[ev]}))]
     {::extensions extensions
      ::enabled enabled
      ::disabled disabled
