@@ -63,9 +63,7 @@
      trace)))
 
 (defn make-interference [interference trace]
-  (->> interference
-       (unsymmetricize-interference trace)
-       (transitive-closure)))
+  (unsymmetricize-interference trace interference))
 
 (defn make-rels [trace mhb interference]
   (let [mhb (transitive-closure (if (map? mhb) mhb (pairs->rel mhb)))

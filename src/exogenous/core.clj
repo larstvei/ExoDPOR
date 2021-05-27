@@ -4,14 +4,14 @@
             [clojure.core.async :as async]))
 
 (def default-options {:strategy :random
-                      :backtracking :backsets
+                      :backtracking :optimal
                       :workers (* 2 (.availableProcessors
                                      (Runtime/getRuntime)))})
 
 (def search-state (atom {}))
 
-(defn submit! [seed-trace trace enabled-disabled rels]
-  (swap! search-state dpor/add-trace seed-trace trace enabled-disabled rels))
+(defn submit! [result]
+  (swap! search-state dpor/add-trace result))
 
 (defn execute [sim seed-trace]
   (let [{:keys [trace mhb interference enabled-disabled]} (sim seed-trace)
@@ -71,8 +71,8 @@
          (and (not (empty? active-jobs))
               (or (= (count active-jobs) (:workers options))
                   (empty? seeds)))
-         (let [{:keys [seed-trace trace enabled-disabled rels] :as m} (async/<!! c)
-               _ (submit! seed-trace trace enabled-disabled rels)
+         (let [{:keys [seed-trace trace rels] :as m} (async/<!! c)
+               _ (submit! m)
                candidates (dpor/backtrack
                            (assoc options :search-state @search-state))]
            (recur (set (remove active-jobs candidates))
