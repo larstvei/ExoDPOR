@@ -68,8 +68,9 @@
 (defn make-rels [trace mhb interference]
   (let [mhb (transitive-closure (if (map? mhb) mhb (pairs->rel mhb)))
         interference (if (map? interference) interference (pairs->rel interference))
-        interference (make-interference interference trace)
-        hb (transitive-closure (rel-union mhb interference))]
+        hb (->> (make-interference interference trace)
+                (rel-union mhb)
+                transitive-closure)]
     {:mhb mhb :interference interference :hb hb}))
 
 ;;; Surprisingly slow, keep for reference.

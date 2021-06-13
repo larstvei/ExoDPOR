@@ -25,7 +25,22 @@
 (t/deftest weak-initials
   (t/is (= #{:q1 :r1} (weak-initial-set w #{:q1 :r1} rels))))
 
+(t/deftest wakeup
+  (let [w1 (wut-singleton :p1)
+        w2 (wut-insert w1 [:q1 :q2] rels)
+        w3 (wut-insert w2 [:r1 :r2] rels)]
+    (t/is (set (map vec (wut-branches w1))) #{[:p1]})
+    (t/is (= w2 w3))
+    (t/is (set (map vec (wut-branches w3))) #{[:p1] [:q1 :q2]})))
+
 (t/deftest add-a-trace
+  (let [result (add-trace {} {:seed-trace []
+                              :trace trace
+                              :enabled-disabled enabled-disabled
+                              :rels rels})]
+    result))
+
+#_(t/deftest add-a-trace
   (let [result (add-trace {} [] trace enabled-disabled rels)]
     (t/is (= {[]
               {:backset #{:q1 :p1}, :enabled #{:q1 :p1 :r1}, :disabled #{}, :sleep #{:p1}},

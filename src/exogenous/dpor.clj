@@ -13,7 +13,7 @@
      (fn [x]
        (swap! enumeration inc)))))
 
-(defn canon
+(defn canonicalize
   "Given a subsequence of a trace `v`, and a happens-before relation `hb` for
   that trace, return a canonical permutation of `v` that respects the `hb`. We
   obtain such a canonical permutation by using the (arbitrary) total ordering
@@ -56,16 +56,75 @@
              :when (empty? (filter #(relates? hb % ev) v))]
          ev)))
 
-(defn weak-initial-set
+(defn weak-initial-set-1
   "Given a subsequence of a trace `v`, a set of enabled events, and a
   happens-before relation `hb`, return the set of enabled events that has no
   `hb` predecessor in `v`."
-  [v enabled {:keys [hb]}]
+  [v enabled {:keys [hb] :as rels}]
+  (union (initial-set v rels)
+         (set (for [ev enabled
+                    :when (empty? (filter #(relates? hb ev %) v))]
+                ev))))
+
+(defn weak-initial-set-2
+  "Given a subsequence of a trace `v`, a set of enabled events, and a
+  happens-before relation `hb`, return the set of enabled events that has no
+  `hb` predecessor in `v`."
+  [v enabled {:keys [hb interference]}]
   (set (for [ev enabled
-             :when (empty? (filter #(relates? hb % ev) v))]
+             :when (empty? (filter #(relates? interference % ev) v))]
          ev)))
 
-(defn update-extensions
+(defn wut-singleton [ev]
+  {ev nil})
+
+(defn wut-remove-subtree [wut ev]
+  (let [res (dissoc wut ev)]
+    (when-not (empty? res)
+      res)))
+
+(defn wut-subtree [wut ev]
+  (let [res (get wut ev)]
+    (when-not (empty? res)
+      res)))
+
+(defn wut-branches [wut]
+  (if (empty? wut)
+    '(())
+    (mapcat
+     (fn [[ev children]]
+       (map (partial cons ev) (wut-branches children)))
+     wut)))
+
+(defn wut-min-branch [wut]
+  (loop [wut wut w []]
+    (if (empty? wut)
+      w
+      (let [e (apply min-key ordering (keys wut))]
+        (recur (wut-subtree wut e) (conj w e))))))
+
+(defn minimal-start [wut w {:keys [hb] :as rels}]
+  (let [initials (initial-set w rels)
+        [e & _] (-> (fn [e]
+                      (or (initials e)
+                          (empty? (filter #(relates? hb e %) w))))
+                    (filter (sort-by ordering (keys wut))))]
+    (cond (nil? e) ()
+          (initials e) (cons e (minimal-start (wut e) (remove #{e} w) rels))
+          :else (cons e (minimal-start (wut e) w rels)))))
+
+(defn wut-insert [wut w rels]
+  (let [canon (canonicalize w rels)
+        v (minimal-start wut canon rels)
+        w2 (concat v (remove (set v) canon))]
+    (if (empty? (get-in wut v))
+      (do (println "No insertion," v "is already in wut")
+          wut)
+      (do
+        (println "Inserted:" w2)
+        (assoc-in wut w2 nil)))))
+
+(defn update-wakeup-tree
   "Given a `search-state`, a `trace`, with two positions `i` and `j` that
   corresponds to events that are in a reversible race, and relations `rels`,
   return an updated `search-state` that guarantees that a trace in which the
@@ -79,9 +138,21 @@
         ev2 (trace j)
         {:keys [::enabled ::sleep]} (search-state pre)
         v (conj (not-dep trace i rels) ev2)
-        weak-initials (weak-initial-set v enabled rels)]
+        weak-initials (weak-initial-set-1 v enabled rels)
+        weak-initials-2 (weak-initial-set-2 v enabled rels)]
+    (println "--------------------------------------------------")
+    (when (not= weak-initials weak-initials-2)
+      (println "Weak initials differ:" weak-initials weak-initials-2))
+    (println "Reversible race:" (trace i) (trace j) "\n")
+    (println "v:" v)
+    (println "sleep:" sleep)
+    (println "initials:" (initial-set v rels))
+    (println "weak initials:" weak-initials)
+    (println "pre: " pre)
     (if (empty? (intersection weak-initials sleep))
-      (update-in search-state [pre ::extensions] conj (canon v rels))
+      (do
+        (println "Attempting to insert")
+        (update-in search-state [pre ::wut] wut-insert v rels))
       search-state)))
 
 (defn reversible-race?
@@ -95,7 +166,7 @@
 
   The race is reversible if the events are not in `mhb` and that the event at
   `j` is not blocked by the event at `i`."
-  [search-state trace i j {:keys [mhb interference hb]}]
+  [search-state trace i j {:keys [mhb hb]}]
   (let [pre (subvec trace 0 i)
         ev1 (trace i)
         ev2 (trace j)
@@ -113,18 +184,18 @@
   "Given a `search-state`, a `trace`, and relations `rels`, return the all pairs
   of indices that are in a reversible race."
   [search-state trace rels]
-  (for [j (range (count trace))
-        i (range j)
+  (for [i (range (count trace))
+        j (range (inc i) (count trace))
         :when (reversible-race? search-state trace i j rels)]
     [i j]))
 
-(defn add-extensions
+(defn add-to-wakeup-trees
   "Given a `search-state`, a `trace`, and relations `rels`, return an updated
   `search-state` where each reversible race will eventually be explored from
   some extension."
   [search-state {:keys [trace rels]}]
   (->> (reversible-races search-state trace rels)
-       (reduce (fn [s [i j]] (update-extensions s trace i j rels)) search-state)))
+       (reduce (fn [ss [i j]] (update-wakeup-tree ss trace i j rels)) search-state)))
 
 (defn initialize-node
   "Given an event `ev` a `parent` node, a happens-before relation `hb` and a
@@ -135,25 +206,21 @@
   node, and the event `ev` is the transition between the two nodes.
 
   The sleep set of the new node is (initially) a subset of the sleep set of the
-  parent node, where we only keep the entries that are not in happens-after
+  parent node, where we keep only the events that are not in happens-after
   relation with `ev`.
 
   The extensions for the new node are all extensions of the parent node that
   starts with `ev` with `ev` itself removed."
-  [ev parent {:keys [hb]} {:keys [enabled disabled]}]
-  (let [sleep (set (remove #(relates? hb ev %) (::sleep parent)))
-        extensions (set (or (->> (::extensions parent)
-                                 (filter #(= ev (first %)))
-                                 (map (comp vec rest))
-                                 (remove empty?)
-                                 seq)
-                            #{[ev]}))]
-    {::extensions extensions
+  [prev-ev ev parent {:keys [hb]} {:keys [enabled disabled]}]
+  (let [sleep (set (remove #(relates? hb % prev-ev) (::sleep parent)))
+        wut (or (wut-subtree (::wut parent) prev-ev)
+                (wut-singleton ev))]
+    {::wut wut
      ::enabled enabled
      ::disabled disabled
      ::sleep sleep}))
 
-(defn initialize-new-nodesn
+(defn initialize-new-nodes
   "Given a `search-state` and arguments `trace`, `enabled-disabled` and relations
   `rels`, return an updated `search-state` where new nodes in the trace are
   initialized.
@@ -165,12 +232,13 @@
   [search-state {:keys [trace enabled-disabled rels]}]
   (-> (fn [ss i]
         (let [ev (trace i)
-              path (subvec trace 0 i)
-              parent (if (empty? path) {} (ss (pop path)))
-              node (or (ss path)
+              pre (subvec trace 0 i)
+              parent (if (empty? pre) {} (ss (pop pre)))
+              prev-ev (last pre)
+              node (or (ss pre)
                        (initialize-node
-                        ev parent rels (enabled-disabled i)))]
-          (assoc ss path node)))
+                        prev-ev ev parent rels (enabled-disabled i)))]
+          (assoc ss pre node)))
       (reduce search-state (range (count trace)))))
 
 (defn add-final-node
@@ -194,18 +262,19 @@
   that are a prefix of `trace` mark it's next event as visited. Marking as
   visited means that the next event is added to the sleep set, and all
   extensions starting with the event is removed."
-  [search-state trace]
+  [search-state {:keys [trace]}]
   (-> (fn [ss i]
         (let [next-node (ss (subvec trace 0 (inc i)))]
-          (if (empty? (::extensions next-node))
+          (if (empty? (::wut next-node))
             (let [pre (subvec trace 0 i)
                   ev (trace i)
-                  {:keys [::extensions]} (search-state pre)
-                  new-extensions (set (remove #(= ev (first %)) extensions))]
+                  {:keys [::wut ::enabled]} (ss pre)
+                  new-wut (wut-remove-subtree wut ev)]
+              (println "Adding" ev "to sleep at" pre)
               (-> (update-in ss [pre ::sleep] conj ev)
-                  (assoc-in [pre ::extensions] new-extensions)))
-            ss)))
-      (reduce search-state (range (count trace)))))
+                  (assoc-in [pre ::wut] new-wut)))
+            (reduced ss))))
+      (reduce search-state (reverse (range (count trace))))))
 
 (defn add-trace
   "Given a `search-state` and arguments `args`, containing the `seed-trace`,
@@ -213,11 +282,19 @@
   updated with `trace`. This process consists of initializing the nodes along
   the path of `trace`, adding all extensions that leads to reversing observed
   races and marking the nodes as visited."
-  [search-state {:keys [trace] :as args}]
-  (-> (initialize-new-nodes search-state args)
-      (add-final-node args)
-      (add-extensions args)
-      (mark-as-visited trace)))
+  [search-state args]
+  (println "\n##########################################\n")
+  (println "adding trace:" (:trace args))
+  (println "\nrelations:" (:rels args))
+  (println)
+  (let [res (-> (initialize-new-nodes search-state args)
+                (add-final-node args)
+                (add-to-wakeup-trees args)
+                (mark-as-visited args))]
+    (println "\n")
+    (println (sort-by (comp count key) res))
+    (println "\n")
+    res))
 
 (defmulti backtrack
   "Given args containing `search-state`, dispatching on `:backtracking`, return a
@@ -231,8 +308,9 @@
   :backtracking)
 
 (defmethod backtrack :optimal [{:keys [search-state]}]
-  (let [candidates (mapcat (fn [[seed-trace {:keys [::extensions]}]]
-                             (map (partial into seed-trace) extensions))
+  (let [candidates (mapcat (fn [[seed-trace {:keys [::wut]}]]
+                             #_(map (partial into seed-trace) (wut-branches wut))
+                             (list (into seed-trace (wut-min-branch wut))))
                            search-state)]
     (set (remove search-state candidates))))
 
