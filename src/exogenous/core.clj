@@ -72,7 +72,7 @@
               (or (= (count active-jobs) (:workers options))
                   (empty? seeds)))
          (let [{:keys [seed-trace trace rels] :as m} (async/<!! c)
-               _ (submit! m)
+               _ (submit! (merge m options))
                candidates (dpor/backtrack
                            (assoc options :search-state @search-state))]
            (recur (set (remove active-jobs candidates))

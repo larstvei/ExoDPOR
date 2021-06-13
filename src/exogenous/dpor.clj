@@ -56,7 +56,7 @@
              :when (empty? (filter #(relates? hb % ev) v))]
          ev)))
 
-(defn weak-initial-set-1
+(defn weak-initial-set
   "Given a subsequence of a trace `v`, a set of enabled events, and a
   happens-before relation `hb`, return the set of enabled events that has no
   `hb` predecessor in `v`."
@@ -65,15 +65,6 @@
          (set (for [ev enabled
                     :when (empty? (filter #(relates? hb ev %) v))]
                 ev))))
-
-(defn weak-initial-set-2
-  "Given a subsequence of a trace `v`, a set of enabled events, and a
-  happens-before relation `hb`, return the set of enabled events that has no
-  `hb` predecessor in `v`."
-  [v enabled {:keys [hb interference]}]
-  (set (for [ev enabled
-             :when (empty? (filter #(relates? interference % ev) v))]
-         ev)))
 
 (defn wut-singleton [ev]
   {ev nil})
@@ -118,13 +109,10 @@
         v (minimal-start wut canon rels)
         w2 (concat v (remove (set v) canon))]
     (if (empty? (get-in wut v))
-      (do (println "No insertion," v "is already in wut")
-          wut)
-      (do
-        (println "Inserted:" w2)
-        (assoc-in wut w2 nil)))))
+      wut
+      (assoc-in wut w2 nil))))
 
-(defn update-wakeup-tree
+(defmulti update-backtracking
   "Given a `search-state`, a `trace`, with two positions `i` and `j` that
   corresponds to events that are in a reversible race, and relations `rels`,
   return an updated `search-state` that guarantees that a trace in which the
@@ -133,26 +121,28 @@
   If there is no weak initial for the non-dependent events after `i` in the
   sleep set before `i`, then add an extension that is guaranteed to reverse the
   race."
-  [search-state trace i j rels]
+  (fn [ss i j args] (:backtracking args)))
+
+(defmethod update-backtracking :backsets
+  [search-state i j {:keys [trace rels]}]
+  (let [pre (subvec trace 0 i)
+        ev2 (trace j)
+        {:keys [::backset]} (search-state pre)
+        v (conj (not-dep trace i rels) ev2)
+        initials (initial-set v rels)]
+    (if (empty? (intersection initials backset))
+      (update-in search-state [pre ::backset] conj (first initials))
+      search-state)))
+
+(defmethod update-backtracking :optimal
+  [search-state i j {:keys [trace rels]}]
   (let [pre (subvec trace 0 i)
         ev2 (trace j)
         {:keys [::enabled ::sleep]} (search-state pre)
         v (conj (not-dep trace i rels) ev2)
-        weak-initials (weak-initial-set-1 v enabled rels)
-        weak-initials-2 (weak-initial-set-2 v enabled rels)]
-    (println "--------------------------------------------------")
-    (when (not= weak-initials weak-initials-2)
-      (println "Weak initials differ:" weak-initials weak-initials-2))
-    (println "Reversible race:" (trace i) (trace j) "\n")
-    (println "v:" v)
-    (println "sleep:" sleep)
-    (println "initials:" (initial-set v rels))
-    (println "weak initials:" weak-initials)
-    (println "pre: " pre)
+        weak-initials (weak-initial-set v enabled rels)]
     (if (empty? (intersection weak-initials sleep))
-      (do
-        (println "Attempting to insert")
-        (update-in search-state [pre ::wut] wut-insert v rels))
+      (update-in search-state [pre ::wut] wut-insert v rels)
       search-state)))
 
 (defn reversible-race?
@@ -171,7 +161,7 @@
         ev1 (trace i)
         ev2 (trace j)
         {:keys [::disabled]} (search-state pre)]
-    (and (not (disabled ev2))            ; <- unsure about this
+    (and (not (disabled ev2))           ; <- unsure about this
          (not (relates? mhb ev1 ev2))
          (relates? hb ev1 ev2)
          (empty? (for [k (range (inc i) j)
@@ -189,13 +179,13 @@
         :when (reversible-race? search-state trace i j rels)]
     [i j]))
 
-(defn add-to-wakeup-trees
+(defn backtrack-races
   "Given a `search-state`, a `trace`, and relations `rels`, return an updated
   `search-state` where each reversible race will eventually be explored from
   some extension."
-  [search-state {:keys [trace rels]}]
+  [search-state {:keys [trace rels] :as args}]
   (->> (reversible-races search-state trace rels)
-       (reduce (fn [ss [i j]] (update-wakeup-tree ss trace i j rels)) search-state)))
+       (reduce (fn [ss [i j]] (update-backtracking ss i j args)) search-state)))
 
 (defn initialize-node
   "Given an event `ev` a `parent` node, a happens-before relation `hb` and a
@@ -216,6 +206,7 @@
         wut (or (wut-subtree (::wut parent) prev-ev)
                 (wut-singleton ev))]
     {::wut wut
+     ::backset #{ev}
      ::enabled enabled
      ::disabled disabled
      ::sleep sleep}))
@@ -270,7 +261,6 @@
                   ev (trace i)
                   {:keys [::wut ::enabled]} (ss pre)
                   new-wut (wut-remove-subtree wut ev)]
-              (println "Adding" ev "to sleep at" pre)
               (-> (update-in ss [pre ::sleep] conj ev)
                   (assoc-in [pre ::wut] new-wut)))
             (reduced ss))))
@@ -283,18 +273,10 @@
   the path of `trace`, adding all extensions that leads to reversing observed
   races and marking the nodes as visited."
   [search-state args]
-  (println "\n##########################################\n")
-  (println "adding trace:" (:trace args))
-  (println "\nrelations:" (:rels args))
-  (println)
-  (let [res (-> (initialize-new-nodes search-state args)
-                (add-final-node args)
-                (add-to-wakeup-trees args)
-                (mark-as-visited args))]
-    (println "\n")
-    (println (sort-by (comp count key) res))
-    (println "\n")
-    res))
+  (-> (initialize-new-nodes search-state args)
+      (add-final-node args)
+      (backtrack-races args)
+      (mark-as-visited args)))
 
 (defmulti backtrack
   "Given args containing `search-state`, dispatching on `:backtracking`, return a
@@ -313,6 +295,12 @@
                              (list (into seed-trace (wut-min-branch wut))))
                            search-state)]
     (set (remove search-state candidates))))
+
+(defmethod backtrack :backsets [{:keys [search-state]}]
+  (-> (fn [[seed-trace {:keys [::backset ::sleep]}]]
+        (map (partial conj seed-trace) (difference backset sleep)))
+      (mapcat search-state)
+      set))
 
 (defmethod backtrack :naive [{:keys [search-state]}]
   (let [candidates (mapcat (fn [[seed-trace {:keys [::enabled]}]]
