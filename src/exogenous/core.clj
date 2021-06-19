@@ -1,5 +1,5 @@
 (ns exogenous.core
-  (:require [exogenous.dpor :as dpor]
+  (:require [exogenous.dpor.dpor :as dpor]
             [exogenous.relations :as rel]
             [clojure.core.async :as async]))
 

@@ -1,0 +1,80 @@
+(ns exogenous.dpor.source
+  (:require [clojure.set :as set]
+            [exogenous.dpor.common :refer :all]))
+
+(defn update-backtracking
+  "Given a `search-state`, a `trace`, with two positions `i` and `j` that
+  corresponds to events that are in a reversible race, and relations `rels`,
+  return an updated `search-state` that guarantees that a trace in which the
+  race is reversed is eventually executed.
+
+  If there is no weak initial for the non-dependent events after `i` in the
+  sleep set before `i`, then add an extension that is guaranteed to reverse the
+  race."
+  [search-state i j {:keys [trace rels]}]
+  (let [pre (subvec trace 0 i)
+        ev2 (trace j)
+        {:keys [::backset ::sleep]} (search-state pre)
+        v (conj (not-dep (subvec trace 0 j) i rels) ev2)
+        initials (initial-set v rels)]
+    (if (empty? (set/intersection initials backset))
+      (update-in search-state [pre ::backset] conj (first initials))
+      search-state)))
+
+(defn backtrack-races
+  "Given a `search-state`, a `trace`, and relations `rels`, return an updated
+  `search-state` where each reversible race will eventually be explored from
+  some extension."
+  [search-state {:keys [trace rels] :as args}]
+  (->> (reversible-races search-state trace rels)
+       (reduce (fn [ss [i j]] (update-backtracking ss i j args)) search-state)))
+
+(defn initialize-new-nodes
+  "Given a `search-state` and arguments `trace`, `enabled-disabled` and relations
+  `rels`, return an updated `search-state` where new nodes in the trace are
+  initialized.
+
+  Note that we walk the entire trace, even though it would be sufficient to
+  start at the longest prefix of `trace` that already is associated with a node
+  (i.e. the point from which we extended the trace). Any node already in the
+  tree is left unmodified."
+  ([search-state args]
+   (initialize-new-nodes search-state 0 #{} args))
+  ([ss i sleep {:keys [trace enabled-disabled rels] :as args}]
+   (let [{:keys [enabled disabled]} (enabled-disabled i)
+         pre (subvec trace 0 i)
+         node (ss pre)]
+     (cond (= i (count trace))
+           (-> ss
+               (assoc-in [trace ::enabled] enabled)
+               (assoc-in [trace ::disabled] disabled))
+
+
+           node                         ; is the node already initialized?
+           (let [ev (trace i)]
+             (recur ss (inc i) (next-sleep ev (::sleep node) rels) args))
+
+           :else
+           (let [ev (trace i)
+                 node {::backset #{ev}
+                       ::enabled enabled
+                       ::disabled disabled
+                       ::sleep sleep}]
+             (recur (assoc ss pre node) (inc i)
+                    (next-sleep ev (::sleep node) rels) args))))))
+
+(defn mark-as-visited
+  "Given a `search-state` and a `trace`, return a `search-state` where all paths
+  that are a prefix of `trace` mark it's next event as visited. Marking as
+  visited means that the next event is added to the sleep set, and all
+  extensions starting with the event is removed."
+  [search-state {:keys [trace]}]
+  (-> (fn [ss i]
+        (let [next-node (ss (subvec trace 0 (inc i)))]
+          (if (empty? (set/difference (::backset next-node)
+                                      (::sleep next-node)))
+            (let [pre (subvec trace 0 i)
+                  ev (trace i)]
+              (update-in ss [pre ::sleep] conj ev))
+            (reduced ss))))
+      (reduce search-state (reverse (range (count trace))))))
