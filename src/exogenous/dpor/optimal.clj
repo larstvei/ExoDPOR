@@ -47,6 +47,8 @@
          node (ss pre)]
      (cond (= i (count trace))
            (-> ss
+               (assoc-in [trace ::wut] wut/empty-wut)
+               (assoc-in [trace ::sleep] #{})
                (assoc-in [trace ::enabled] enabled)
                (assoc-in [trace ::disabled] disabled))
 
