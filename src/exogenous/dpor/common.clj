@@ -1,15 +1,14 @@
 (ns exogenous.dpor.common
   (:require [clojure.set :as set]
-            [exogenous.relations :refer [relates?]]))
+            [exogenous.relations :refer [relates? relates*?]]))
 
 (defn not-dep
   "Given a `trace`, an index `i` where event `ev` occurs, and a happens-before
   relation `hb`, return a vector consisting of elements that occur after `ev`
   but does not happen-after `ev`."
   [trace i {hb :hb}]
-  (let [ev (trace i)
-        t (subvec trace (inc i))]
-    (filterv #(not (relates? hb ev %)) t)))
+  (let [[ev & t] (subvec trace i)]
+    (filterv #(not (relates*? hb ev %)) t)))
 
 (defn disables?
   "Given a `search-state`, a trace `pre` and two events `ev1` and `ev2`, return
@@ -21,22 +20,26 @@
         {disabled-after ::disabled} (search-state (conj pre ev1))]
     (and (enabled-before ev2) (disabled-after ev2))))
 
+(defn independent-with? [pre ev w {:keys [hb interference]}]
+  (every? (complement (partial relates? interference ev)) w))
+
 (defn initial-set
   "Given a subsequence of a trace `v` and a happens-before relation `hb`, return
   the set of events that has no `hb` predecessor in `v`."
-  [v {hb :hb}]
-  (set (for [ev v
-             :when (empty? (filter #(relates? hb % ev) v))]
-         ev)))
+  [pre v {hb :hb}]
+  (let [w (into pre v)]
+    (set (for [ev v
+               :when (empty? (filter #(relates*? w hb % ev) v))]
+           ev))))
 
 (defn weak-initial-set
   "Given a subsequence of a trace `v`, a set of enabled events, and a
   happens-before relation `hb`, return the set of enabled events that has no
   `hb` predecessor in `v`."
-  [v enabled {:keys [hb] :as rels}]
-  (set/union (initial-set v rels)
+  [pre v enabled {:keys [hb] :as rels}]
+  (set/union (initial-set pre v rels)
              (set (for [ev enabled
-                        :when (empty? (filter #(relates? hb ev %) v))]
+                        :when (independent-with? pre ev v rels)]
                     ev))))
 
 (defn reversible-race?
@@ -54,12 +57,12 @@
   (let [pre (subvec trace 0 i)
         ev1 (trace i)
         ev2 (trace j)]
-    (and (not (relates? mhb ev1 ev2))
-         (relates? hb ev1 ev2)
+    (and (not (relates*? mhb ev1 ev2))
+         (relates*? hb ev1 ev2)
          (empty? (for [k (range (inc i) j)
                        :let [ev-mid (trace k)]
-                       :when (and (relates? hb ev1 ev-mid)
-                                  (relates? hb ev-mid ev2))]
+                       :when (and (relates*? hb ev1 ev-mid)
+                                  (relates*? hb ev-mid ev2))]
                    k)))))
 
 (defn reversible-races
@@ -71,5 +74,5 @@
         :when (reversible-race? search-state trace i j rels)]
     [i j]))
 
-(defn next-sleep [ev sleep {:keys [hb]}]
-  (set (remove #(relates? hb ev %) sleep)))
+(defn next-sleep [pre ev sleep {:keys [hb] :as rels}]
+  (set (filter #(independent-with? pre ev [%] rels) sleep)))

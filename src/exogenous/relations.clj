@@ -1,5 +1,5 @@
 (ns exogenous.relations
-  (:require [clojure.set :refer [difference union]]))
+  (:require [clojure.set :refer [difference intersection union]]))
 
 (defn relate [r a b]
   (-> (update r b (fnil conj #{}) a)
@@ -14,21 +14,27 @@
         (into s (for [v (r k)] [v k])))
       (reduce #{} (keys r))))
 
-(defn relates? [r a b]
-  ((or (r b) #{}) a))
+(defn relates?
+  ([r a b] ((or (r b) #{}) a))
+  ([t r a b] (and (.contains t b) (relates? r a b))))
 
 (defn dom [r]
   (set (keys r)))
 
 (defn dfs
-  ([r s] (dfs r s #{}))
-  ([r s vs] (-> (fn [vs n] (into vs (dfs r n vs)))
-                (reduce (union (r s) vs) (difference (r s) vs)))))
+  ([r s] (dfs (dom r) r s #{}))
+  ([t r s] (dfs (set t) r s #{}))
+  ([t r s vs] (-> (fn [vs n] (into vs (dfs t r n vs)))
+                  (reduce (union (r s) vs)
+                          (intersection t (difference (r s) vs))))))
 
-(defn relates*? [r a b]
-  ;; TODO: Make order-preserving version for ABS
-  (or (relates? r a b)
-      (relates? (update r b union (dfs r b)) a b)))
+(defn relates*?
+  ([r a b]
+   (or (relates? r a b)
+       (relates? (update r b union (dfs r b)) a b)))
+  ([t r a b]
+   (or (relates? r a b)
+       (relates? (update r b union (dfs (set t) r b)) a b))))
 
 (defn transitive-closure [r]
   (-> (fn [r n]
@@ -69,8 +75,7 @@
   (let [mhb (transitive-closure (if (map? mhb) mhb (pairs->rel mhb)))
         interference (if (map? interference) interference (pairs->rel interference))
         hb (->> (make-interference interference trace)
-                (rel-union mhb)
-                transitive-closure)]
+                (rel-union mhb))]
     {:mhb mhb :interference interference :hb hb}))
 
 ;;; Surprisingly slow, keep for reference.

@@ -74,10 +74,10 @@
          (let [{:keys [seed-trace trace rels] :as m} (async/<!! c)
                _ (submit! (merge m options))
                candidates (dpor/backtrack
-                           (assoc options :search-state @search-state))]
+                           (assoc options :trace trace :search-state @search-state))]
            (recur (set (remove active-jobs candidates))
                   (disj active-jobs seed-trace)
-                  (update stats (:hb rels) conj trace)))
+                  (update stats (rel/transitive-closure (:hb rels)) conj trace)))
 
          ;; We are not saturated, and there is more work to do
          (not (empty? seeds))

@@ -17,9 +17,9 @@
         ev2 (trace j)
         {:keys [::enabled ::sleep]} (search-state pre)
         v (conj (not-dep trace i rels) ev2)
-        weak-initials (weak-initial-set v enabled rels)]
+        weak-initials (weak-initial-set pre v enabled rels)]
     (if (empty? (set/intersection weak-initials sleep))
-      (update-in search-state [pre ::wut] wut/insert v rels)
+      (update-in search-state [pre ::wut] wut/insert pre v rels)
       search-state)))
 
 (defn backtrack-races
@@ -55,7 +55,7 @@
            node                         ; Is node already initialized?
            (let [ev (trace i)]
              (recur ss (inc i)
-                    (next-sleep ev (::sleep node) rels)
+                    (next-sleep pre ev (::sleep node) rels)
                     (wut/subtree (::wut node) ev) args))
 
            :else
@@ -65,7 +65,7 @@
                        ::disabled disabled
                        ::sleep sleep}]
              (recur (assoc ss pre node) (inc i)
-                    (next-sleep ev (::sleep node) rels)
+                    (next-sleep pre ev (::sleep node) rels)
                     (wut/subtree (::wut node) ev) args))))))
 
 (defn mark-as-visited
@@ -85,3 +85,11 @@
                   (assoc-in [pre ::wut] new-wut)))
             (reduced ss))))
       (reduce search-state (reverse (range (count trace))))))
+
+(defn next-seed [search-state trace]
+  (let [{:keys [::wut]} (search-state trace)
+        branch (wut/min-branch wut)
+        seed (into trace branch)]
+    (cond (empty? seed) nil
+          (search-state seed) (next-seed search-state (pop trace))
+          :else seed)))

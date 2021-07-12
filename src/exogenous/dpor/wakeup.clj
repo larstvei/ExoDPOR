@@ -13,22 +13,6 @@
      (fn [x]
        (swap! enumeration inc)))))
 
-(defn canonicalize
-  "Given a subsequence of a trace `v`, and a happens-before relation `hb` for
-  that trace, return a canonical permutation of `v` that respects the `hb`. We
-  obtain such a canonical permutation by using the (arbitrary) total ordering
-  provided by `ordering`, iteratively selecting the minimal element that
-  respects `hb`."
-  [v {:keys [hb]}]
-  (loop [w [] remaining (set v)]
-    (if (empty? remaining)
-      w
-      (let [e (->> (for [e remaining
-                         :when (empty? (filter #(relates? hb % e) remaining))]
-                     e)
-                   (apply min-key ordering))]
-        (recur (conj w e) (disj remaining e))))))
-
 (def empty-wut nil)
 
 (defn singleton [ev]
@@ -59,20 +43,27 @@
       (let [e (apply min-key ordering (keys wut))]
         (recur (subtree wut e) (conj w e))))))
 
-(defn minimal-start [wut w {:keys [hb] :as rels}]
-  (let [initials (initial-set w rels)
+(defn weak-initial-seq? [pre w rels [e & v]]
+  (or (nil? e)
+      (and ((initial-set pre w rels) e)
+           (weak-initial-seq? (conj pre e) (remove #{e} w) rels v))
+      (and (independent-with? pre e w rels)
+           (weak-initial-seq? (conj pre e) w rels v))))
+
+(defn minimal-start [wut pre w {:keys [hb] :as rels}]
+  (let [initials (initial-set pre w rels)
         [e & _] (-> (fn [e]
                       (or (initials e)
-                          (empty? (filter #(relates? hb e %) w))))
+                          (independent-with? pre e w rels)))
                     (filter (sort-by ordering (keys wut))))]
     (cond (nil? e) ()
-          (initials e) (cons e (minimal-start (wut e) (remove #{e} w) rels))
-          :else (cons e (minimal-start (wut e) w rels)))))
+          (initials e) (cons e (minimal-start (wut e) (conj pre e) (remove #{e} w) rels))
+          :else (cons e (minimal-start (wut e) (conj pre e) w rels)))))
 
-(defn insert [wut w rels]
-  (let [canon (canonicalize w rels)
-        v (minimal-start wut canon rels)
-        w2 (concat v (remove (set v) canon))]
+(defn insert [wut pre w rels]
+  (let [v (minimal-start wut pre w rels)
+        w2 (concat v (remove (set v) w))]
+    (assert (weak-initial-seq? pre w rels v))
     (if (empty? (get-in wut v))
       wut
       (assoc-in wut w2 nil))))

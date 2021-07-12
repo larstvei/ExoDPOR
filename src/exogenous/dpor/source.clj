@@ -16,7 +16,7 @@
         ev2 (trace j)
         {:keys [::backset ::sleep]} (search-state pre)
         v (conj (not-dep (subvec trace 0 j) i rels) ev2)
-        initials (initial-set v rels)]
+        initials (initial-set pre v rels)]
     (if (empty? (set/intersection initials backset))
       (update-in search-state [pre ::backset] conj (first initials))
       search-state)))
@@ -53,7 +53,7 @@
 
            node                         ; is the node already initialized?
            (let [ev (trace i)]
-             (recur ss (inc i) (next-sleep ev (::sleep node) rels) args))
+             (recur ss (inc i) (next-sleep pre ev (::sleep node) rels) args))
 
            :else
            (let [ev (trace i)
@@ -62,7 +62,7 @@
                        ::disabled disabled
                        ::sleep sleep}]
              (recur (assoc ss pre node) (inc i)
-                    (next-sleep ev (::sleep node) rels) args))))))
+                    (next-sleep pre ev (::sleep node) rels) args))))))
 
 (defn mark-as-visited
   "Given a `search-state` and a `trace`, return a `search-state` where all paths
@@ -79,3 +79,11 @@
               (update-in ss [pre ::sleep] conj ev))
             (reduced ss))))
       (reduce search-state (reverse (range (count trace))))))
+
+(defn next-seed [search-state trace]
+  (let [{:keys [::backset ::sleep]} (search-state trace)
+        p (first (set/difference backset sleep))
+        seed (conj trace p)]
+    (cond p seed
+          (empty? trace) nil
+          :else (next-seed search-state (pop trace)))))

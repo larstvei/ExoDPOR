@@ -2,8 +2,7 @@
   (:require [clojure.set :as set]
             [exogenous.dpor.optimal :as optimal]
             [exogenous.dpor.source :as source]
-            [exogenous.dpor.wakeup :as wut]
-            [exogenous.relations :refer [relates?]]))
+            [exogenous.dpor.wakeup :as wut]))
 
 (defmulti add-trace
   "Given a `search-state` and arguments `args`, containing the `seed-trace`,
@@ -35,7 +34,7 @@
           (-> ss
               (assoc-in [pre ::enabled] enabled)
               (assoc-in [pre ::disabled] disabled))))
-   (reduce search-state (range (inc (count trace))))))
+      (reduce search-state (range (inc (count trace))))))
 
 (defmulti backtrack
   "Given args containing `search-state`, dispatching on `:backtracking`, return a
@@ -48,19 +47,31 @@
   events in each node."
   :backtracking)
 
-(defmethod backtrack :optimal [{:keys [search-state]}]
-  (let [candidates (mapcat (fn [[seed-trace {:keys [::optimal/wut]}]]
-                             #_(map (partial into seed-trace) (wut/branches wut))
-                             (list (into seed-trace (wut/min-branch wut))))
-                           search-state)]
-    (set (remove search-state candidates))))
+;;; TODO: Improve backtracking
 
-(defmethod backtrack :source [{:keys [search-state]}]
-  (let [candidates (mapcat (fn [[seed-trace {:keys [::source/backset ::source/sleep]}]]
-                             (->> (set/difference backset sleep)
-                                  (map (partial conj seed-trace))))
-                           search-state)]
-    (set (remove search-state candidates))))
+#_(defmethod backtrack :optimal [{:keys [search-state]}]
+    (let [candidates (mapcat (fn [[seed-trace {:keys [::optimal/wut]}]]
+                               (map (partial into seed-trace) (wut/branches wut))
+                               #_(list (into seed-trace (wut/min-branch wut))))
+                             search-state)]
+      (set (remove search-state candidates))))
+
+(defmethod backtrack :optimal [{:keys [search-state trace]}]
+  (if-let [seed (optimal/next-seed search-state trace)]
+    #{seed}
+    #{}))
+
+#_(defmethod backtrack :source [{:keys [search-state]}]
+    (let [candidates (mapcat (fn [[seed-trace {:keys [::source/backset ::source/sleep]}]]
+                               (->> (set/difference backset sleep)
+                                    (map (partial conj seed-trace))))
+                             search-state)]
+      (set (remove search-state candidates))))
+
+(defmethod backtrack :source [{:keys [search-state trace]}]
+  (if-let [seed (source/next-seed search-state trace)]
+    #{seed}
+    #{}))
 
 (defmethod backtrack :naive [{:keys [search-state]}]
   (let [candidates (mapcat (fn [[seed-trace {:keys [::enabled]}]]
