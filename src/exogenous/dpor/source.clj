@@ -14,11 +14,11 @@
   [search-state i j {:keys [trace rels]}]
   (let [pre (subvec trace 0 i)
         ev2 (trace j)
-        {:keys [::backset ::sleep]} (search-state pre)
+        {:keys [backset sleep]} (search-state pre)
         v (conj (not-dep (subvec trace 0 j) i rels) ev2)
         initials (initial-set pre v rels)]
     (if (empty? (set/intersection initials backset))
-      (update-in search-state [pre ::backset] conj (first initials))
+      (update-in search-state [pre :backset] conj (first initials))
       search-state)))
 
 (defn backtrack-races
@@ -46,23 +46,23 @@
          node (ss pre)]
      (cond (= i (count trace))
            (-> ss
-               (assoc-in [trace ::sleep] #{})
-               (assoc-in [trace ::backset] #{})
-               (assoc-in [trace ::enabled] enabled)
-               (assoc-in [trace ::disabled] disabled))
+               (assoc-in [trace :sleep] #{})
+               (assoc-in [trace :backset] #{})
+               (assoc-in [trace :enabled] enabled)
+               (assoc-in [trace :disabled] disabled))
 
            node                         ; is the node already initialized?
            (let [ev (trace i)]
-             (recur ss (inc i) (next-sleep pre ev (::sleep node) rels) args))
+             (recur ss (inc i) (next-sleep pre ev (:sleep node) rels) args))
 
            :else
            (let [ev (trace i)
-                 node {::backset #{ev}
-                       ::enabled enabled
-                       ::disabled disabled
-                       ::sleep sleep}]
+                 node {:backset #{ev}
+                       :enabled enabled
+                       :disabled disabled
+                       :sleep sleep}]
              (recur (assoc ss pre node) (inc i)
-                    (next-sleep pre ev (::sleep node) rels) args))))))
+                    (next-sleep pre ev (:sleep node) rels) args))))))
 
 (defn mark-as-visited
   "Given a `search-state` and a `trace`, return a `search-state` where all paths
@@ -72,16 +72,16 @@
   [search-state {:keys [trace]}]
   (-> (fn [ss i]
         (let [next-node (ss (subvec trace 0 (inc i)))]
-          (if (empty? (set/difference (::backset next-node)
-                                      (::sleep next-node)))
+          (if (empty? (set/difference (:backset next-node)
+                                      (:sleep next-node)))
             (let [pre (subvec trace 0 i)
                   ev (trace i)]
-              (update-in ss [pre ::sleep] conj ev))
+              (update-in ss [pre :sleep] conj ev))
             (reduced ss))))
       (reduce search-state (reverse (range (count trace))))))
 
 (defn next-seed [search-state trace]
-  (let [{:keys [::backset ::sleep]} (search-state trace)
+  (let [{:keys [backset sleep]} (search-state trace)
         p (first (set/difference backset sleep))
         seed (conj trace p)]
     (cond p seed

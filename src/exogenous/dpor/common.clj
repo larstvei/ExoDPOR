@@ -16,8 +16,8 @@
   `pre`. Then `ev1` disables `ev2` if `ev2` was enabled in the state before
   `ev1` was executed, and disabled after."
   [search-state pre ev1 ev2]
-  (let [{enabled-before ::enabled} (search-state pre)
-        {disabled-after ::disabled} (search-state (conj pre ev1))]
+  (let [{enabled-before :enabled} (search-state pre)
+        {disabled-after :disabled} (search-state (conj pre ev1))]
     (and (enabled-before ev2) (disabled-after ev2))))
 
 (defn independent-with? [pre ev w {:keys [hb interference]}]

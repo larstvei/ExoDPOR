@@ -32,8 +32,8 @@
         (let [pre (subvec trace 0 i)
               {:keys [enabled disabled]} (enabled-disabled i)]
           (-> ss
-              (assoc-in [pre ::enabled] enabled)
-              (assoc-in [pre ::disabled] disabled))))
+              (assoc-in [pre :enabled] enabled)
+              (assoc-in [pre :disabled] disabled))))
       (reduce search-state (range (inc (count trace))))))
 
 (defmulti backtrack
@@ -74,7 +74,7 @@
     #{}))
 
 (defmethod backtrack :naive [{:keys [search-state]}]
-  (let [candidates (mapcat (fn [[seed-trace {:keys [::enabled]}]]
+  (let [candidates (mapcat (fn [[seed-trace {:keys [:enabled]}]]
                              (map (partial conj seed-trace) enabled))
                            search-state)]
     (set (remove search-state candidates))))

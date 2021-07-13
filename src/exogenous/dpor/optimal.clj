@@ -15,11 +15,11 @@
   [search-state i j {:keys [trace rels]}]
   (let [pre (subvec trace 0 i)
         ev2 (trace j)
-        {:keys [::enabled ::sleep]} (search-state pre)
+        {:keys [enabled sleep]} (search-state pre)
         v (conj (not-dep trace i rels) ev2)
         weak-initials (weak-initial-set pre v enabled rels)]
     (if (empty? (set/intersection weak-initials sleep))
-      (update-in search-state [pre ::wut] wut/insert pre v rels)
+      (update-in search-state [pre :wut] wut/insert pre v rels)
       search-state)))
 
 (defn backtrack-races
@@ -47,26 +47,26 @@
          node (ss pre)]
      (cond (= i (count trace))
            (-> ss
-               (assoc-in [trace ::wut] wut/empty-wut)
-               (assoc-in [trace ::sleep] #{})
-               (assoc-in [trace ::enabled] enabled)
-               (assoc-in [trace ::disabled] disabled))
+               (assoc-in [trace :wut] wut/empty-wut)
+               (assoc-in [trace :sleep] #{})
+               (assoc-in [trace :enabled] enabled)
+               (assoc-in [trace :disabled] disabled))
 
            node                         ; Is node already initialized?
            (let [ev (trace i)]
              (recur ss (inc i)
-                    (next-sleep pre ev (::sleep node) rels)
-                    (wut/subtree (::wut node) ev) args))
+                    (next-sleep pre ev (:sleep node) rels)
+                    (wut/subtree (:wut node) ev) args))
 
            :else
            (let [ev (trace i)
-                 node {::wut (if (empty? wut) (wut/singleton ev) wut)
-                       ::enabled enabled
-                       ::disabled disabled
-                       ::sleep sleep}]
+                 node {:wut (if (empty? wut) (wut/singleton ev) wut)
+                       :enabled enabled
+                       :disabled disabled
+                       :sleep sleep}]
              (recur (assoc ss pre node) (inc i)
-                    (next-sleep pre ev (::sleep node) rels)
-                    (wut/subtree (::wut node) ev) args))))))
+                    (next-sleep pre ev (:sleep node) rels)
+                    (wut/subtree (:wut node) ev) args))))))
 
 (defn mark-as-visited
   "Given a `search-state` and a `trace`, return a `search-state` where all paths
@@ -76,18 +76,18 @@
   [search-state {:keys [trace]}]
   (-> (fn [ss i]
         (let [next-node (ss (subvec trace 0 (inc i)))]
-          (if (empty? (::wut next-node))
+          (if (empty? (:wut next-node))
             (let [pre (subvec trace 0 i)
                   ev (trace i)
-                  {:keys [::wut]} (ss pre)
+                  {:keys [wut]} (ss pre)
                   new-wut (wut/remove-subtree wut ev)]
-              (-> (update-in ss [pre ::sleep] conj ev)
-                  (assoc-in [pre ::wut] new-wut)))
+              (-> (update-in ss [pre :sleep] conj ev)
+                  (assoc-in [pre :wut] new-wut)))
             (reduced ss))))
       (reduce search-state (reverse (range (count trace))))))
 
 (defn next-seed [search-state trace]
-  (let [{:keys [::wut]} (search-state trace)
+  (let [{:keys [wut]} (search-state trace)
         branch (wut/min-branch wut)
         seed (into trace branch)]
     (cond (empty? seed) nil
