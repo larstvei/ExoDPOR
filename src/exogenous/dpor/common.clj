@@ -55,15 +55,28 @@
   `j` is not blocked by the event at `i`."
   [search-state trace i j {:keys [mhb hb]}]
   (let [pre (subvec trace 0 i)
+        {:keys [disabled]} (search-state pre)
         ev1 (trace i)
         ev2 (trace j)]
     (and (not (relates*? mhb ev1 ev2))
+         (not (disabled ev2))
          (relates*? hb ev1 ev2)
          (empty? (for [k (range (inc i) j)
                        :let [ev-mid (trace k)]
                        :when (and (relates*? hb ev1 ev-mid)
                                   (relates*? hb ev-mid ev2))]
                    k)))))
+
+(defn disabled-races [search-state trace rels]
+  (for [i (range (count trace))
+        j (range (inc i) (count trace))
+        :let [pre1 (subvec trace 0 i)
+              pre2 (subvec trace 0 j)
+              ev1 (trace i)
+              {:keys [:disabled]} (search-state pre2)]
+        disabled-event disabled
+        :when (disables? search-state pre1 ev1 disabled-event)]
+    [i j disabled-event]))
 
 (defn reversible-races
   "Given a `search-state`, a `trace`, and relations `rels`, return the all pairs

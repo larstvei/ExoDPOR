@@ -22,6 +22,14 @@
       (update-in search-state [pre :wut] wut/insert pre v rels)
       search-state)))
 
+(defn backtrack-disabled [search-state {:keys [trace rels] :as args}]
+  (-> (fn [ss [i j disabled-event]]
+        (let [new-args (assoc-in args [:trace j] disabled-event)]
+          (println i j disabled-event)
+          (println (:trace new-args))
+          (update-backtracking ss i j new-args)))
+      (reduce search-state (disabled-races search-state trace rels))))
+
 (defn backtrack-races
   "Given a `search-state`, a `trace`, and relations `rels`, return an updated
   `search-state` where each reversible race will eventually be explored from

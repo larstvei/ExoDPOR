@@ -17,6 +17,7 @@
   (-> search-state
       (optimal/initialize-new-nodes args)
       (optimal/backtrack-races args)
+      (optimal/backtrack-disabled args)
       (optimal/mark-as-visited args)))
 
 (defmethod add-trace :source
