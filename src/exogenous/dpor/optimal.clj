@@ -68,13 +68,13 @@
 
            :else
            (let [ev (trace i)
-                 node {:wut (if (empty? wut) (wut/singleton ev) wut)
-                       :enabled enabled
-                       :disabled disabled
-                       :sleep sleep}]
-             (recur (assoc ss pre node) (inc i)
-                    (next-sleep pre ev (:sleep node) rels)
-                    (wut/subtree (:wut node) ev) args))))))
+                 new-node {:wut (if (empty? wut) (wut/singleton ev) wut)
+                           :enabled enabled
+                           :disabled disabled
+                           :sleep sleep}]
+             (recur (assoc ss pre new-node) (inc i)
+                    (next-sleep pre ev (:sleep new-node) rels)
+                    (wut/subtree (:wut new-node) ev) args))))))
 
 (defn mark-as-visited
   "Given a `search-state` and a `trace`, return a `search-state` where all paths
