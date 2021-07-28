@@ -48,6 +48,17 @@
    (= relation
       (rel->pairs (pairs->rel relation)))))
 
+(def basic-correctness
+  (prop/for-all
+   [pairs pairs-gen]
+   (let [r (pairs->rel pairs)
+         elements (dom r)]
+     (and (= (set elements) (set (mapcat identity pairs)))
+          (= pairs
+             (set (for [e1 elements e2 elements
+                        :when (relates? r e1 e2)]
+                    [e1 e2])))))))
+
 (def transitive-prop
   (prop/for-all
    [r pairs-gen]
@@ -94,6 +105,7 @@
 
 (t/deftest generative-tests
   (t/is (= true (:pass? (tc/quick-check 100 isomorphic-prop))))
+  (t/is (= true (:pass? (tc/quick-check 100 basic-correctness))))
   (t/is (= true (:pass? (tc/quick-check 100 union-prop))))
   (t/is (= true (:pass? (tc/quick-check 20 transitive-prop))))
   (t/is (= true (:pass? (tc/quick-check 20 transitive-relate*))))
