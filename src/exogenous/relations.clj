@@ -58,6 +58,17 @@
             (update r e (fnil difference #{}) occur-after)))
         (reduce r (range (count trace))))))
 
+(defn hb? [pre {:keys [mhb interference]} ev1 ev2]
+  (let [low (.indexOf pre ev1)
+        high (.indexOf pre ev2)]
+    (when (and (< low high) (not= low -1) (not= high -1))
+      (loop [high high seen (union (set (interference ev2)) (set (mhb ev2)))]
+        (let [ev (nth pre high)]
+          (cond (seen ev1) true
+                (= low high) false
+                (seen ev) (recur (dec high) (union seen (set (interference ev)) (set (mhb ev))))
+                :else (recur (dec high) seen)))))))
+
 (defn enabled-candidates [domain visited r]
   (into #{} (filter #(empty? (difference (r %) visited)) domain)))
 

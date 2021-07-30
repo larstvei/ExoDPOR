@@ -1,14 +1,14 @@
 (ns exogenous.dpor.common
   (:require [clojure.set :as set]
-            [exogenous.relations :refer [relates? relates*?]]))
+            [exogenous.relations :refer [hb? relates?]]))
 
 (defn not-dep
   "Given a `trace`, an index `i` where event `ev` occurs, and a happens-before
   relation `hb`, return a vector consisting of elements that occur after `ev`
   but does not happen-after `ev`."
-  [trace i {hb :hb}]
+  [trace i rels]
   (let [[ev & t] (subvec trace i)]
-    (filterv #(not (relates*? hb ev %)) t)))
+    (filterv #(not (hb? trace rels ev %)) t)))
 
 (defn disables?
   "Given a `search-state`, a trace `pre` and two events `ev1` and `ev2`, return
@@ -20,16 +20,17 @@
         {disabled-after :disabled} (search-state (conj pre ev1))]
     (and (enabled-before ev2) (disabled-after ev2))))
 
-(defn independent-with? [pre ev w {:keys [hb interference]}]
-  (every? (complement (partial relates? interference ev)) w))
+(defn independent-with? [pre ev w {:keys [hb mhb interference] :as rels}]
+  (let [dom (vec (concat pre [ev] w))]
+    (every? #(not (hb? dom rels ev %)) w)))
 
 (defn initial-set
   "Given a subsequence of a trace `v` and a happens-before relation `hb`, return
   the set of events that has no `hb` predecessor in `v`."
-  [pre v {hb :hb}]
+  [pre v rels]
   (let [w (into pre v)]
     (set (for [ev v
-               :when (empty? (filter #(relates*? w hb % ev) v))]
+               :when (every? #(not (hb? w rels % ev)) v)]
            ev))))
 
 (defn weak-initial-set
@@ -53,18 +54,18 @@
 
   The race is reversible if the events are not in `mhb` and that the event at
   `j` is not blocked by the event at `i`."
-  [search-state trace i j {:keys [mhb hb]}]
+  [search-state trace i j {:keys [mhb hb] :as rels}]
   (let [pre (subvec trace 0 i)
         {:keys [disabled]} (search-state pre)
         ev1 (trace i)
         ev2 (trace j)]
-    (and (not (relates*? mhb ev1 ev2))
+    (and (not (relates? mhb ev1 ev2))
          (not (disabled ev2))
-         (relates*? hb ev1 ev2)
+         (hb? trace rels ev1 ev2)
          (empty? (for [k (range (inc i) j)
                        :let [ev-mid (trace k)]
-                       :when (and (relates*? hb ev1 ev-mid)
-                                  (relates*? hb ev-mid ev2))]
+                       :when (and (hb? trace rels ev1 ev-mid)
+                                  (hb? trace rels ev-mid ev2))]
                    k)))))
 
 (defn disabled-races [search-state trace rels]
