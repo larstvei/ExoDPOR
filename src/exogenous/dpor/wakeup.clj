@@ -1,6 +1,6 @@
 (ns exogenous.dpor.wakeup
   (:require [exogenous.dpor.common :refer :all]
-            [exogenous.relations :refer [relates?]]))
+            [clojure.set :as set]))
 
 (def ordering
   "This procedure associates any value `x` with some arbitrary natural number n,
@@ -28,6 +28,9 @@
     (when-not (empty? res)
       res)))
 
+(defn children [wut]
+  (keys wut))
+
 (defn branches [wut]
   (if (empty? wut)
     '(())
@@ -43,27 +46,64 @@
       (let [e (apply min-key ordering (keys wut))]
         (recur (subtree wut e) (conj w e))))))
 
-(defn weak-initial-seq? [pre w rels [e & v]]
+(defn initial-seq? [pre [e & v] w rels]
   (or (nil? e)
       (and ((initial-set pre w rels) e)
-           (weak-initial-seq? (conj pre e) (remove #{e} w) rels v))
+           (initial-seq? (conj pre e) v (remove #{e} w) rels))))
+
+(defn weak-initial-seq? [pre [e & v] w rels]
+  (or (nil? e)
+      (and ((initial-set pre w rels) e)
+           (weak-initial-seq? (conj pre e) v (remove #{e} w) rels))
       (and (independent-with? pre e w rels)
-           (weak-initial-seq? (conj pre e) w rels v))))
+           (weak-initial-seq? (conj pre e) v w rels))))
 
-(defn minimal-start [wut pre w {:keys [hb] :as rels}]
-  (let [initials (initial-set pre w rels)
-        [e & _] (-> (fn [e]
-                      (or (initials e)
-                          (independent-with? pre e w rels)))
-                    (filter (sort-by ordering (keys wut))))]
-    (cond (nil? e) ()
-          (initials e) (cons e (minimal-start (wut e) (conj pre e) (remove #{e} w) rels))
-          :else (cons e (minimal-start (wut e) (conj pre e) w rels)))))
+(defn minimal-start
+  ([wut pre w rels] (minimal-start wut pre [] w rels))
+  ([wut pre v w rels]
+   (let [events (set (children wut))
+         initials (set/intersection events (initial-set pre w rels))
+         indep (set (filter #(independent-with? pre % w rels) events))
+         ev (first (sort-by ordering (set/union initials indep)))
+         pre2 (conj pre ev)
+         v2 (conj v ev)]
+     (cond (nil? ev) v
+           (initials ev) (recur (wut ev) pre2 v2 (remove #{ev} w) rels)
+           (indep ev) (recur (wut ev) pre2 v2 w rels)))))
 
-(defn insert [wut pre w rels]
+(defn shortest-extension [pre w [e & v] rels]
+  (cond (nil? e) w
+        (not (.contains w e)) (shortest-extension (conj pre e) w v rels)
+        ((initial-set pre w rels) e) (shortest-extension (conj pre e) (remove #{e} w) v rels)
+        :else (assert false)))
+
+(defn subsequences-of
+  ([w] (subsequences-of w #{[]}))
+  ([[e & w] res]
+   (if (nil? e)
+     '(())
+     (let [res (subsequences-of w)]
+       (concat res (map (partial cons e) res))))))
+
+(defn shortest-extension-candidates [pre w v rels]
+  (->> (subsequences-of w)
+       (map (partial concat v))
+       (filter #(initial-seq? pre w % rels))))
+
+(defn insert [wut pre w rels enabled]
   (let [v (minimal-start wut pre w rels)
         w2 (concat v (remove (set v) w))]
-    (assert (weak-initial-seq? pre w rels v))
+    (comment
+      (assert (weak-initial-seq? pre v w rels))
+      (assert (weak-initial-seq? pre w v rels))
+      (assert (initial-seq? pre w w2 rels))
+      (let [wi1 (weak-initial-set pre w enabled rels)
+            wi2 (weak-initial-set pre w2 enabled rels)]
+        (assert (clojure.set/subset? wi2 wi1)))
+      (let [w2-alternative (concat v (shortest-extension pre w v rels))
+            candidates (shortest-extension-candidates pre w v rels)
+            w2-brute (apply min-key count candidates)]
+        (assert (= w2 w2-alternative w2-brute))))
     (if (empty? (get-in wut v))
       wut
       (assoc-in wut w2 nil))))

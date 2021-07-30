@@ -19,7 +19,8 @@
         v (conj (not-dep trace i rels) ev2)
         weak-initials (weak-initial-set pre v enabled rels)]
     (if (empty? (set/intersection weak-initials sleep))
-      (update-in search-state [pre :wut] wut/insert pre v rels)
+      ;; Note: enabled is passed to wut/insert for checking invariants only.
+      (update-in search-state [pre :wut] wut/insert pre v rels enabled)
       search-state)))
 
 (defn backtrack-disabled [search-state {:keys [trace rels] :as args}]
