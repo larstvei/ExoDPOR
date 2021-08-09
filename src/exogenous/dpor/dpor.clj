@@ -25,6 +25,7 @@
   (-> search-state
       (source/initialize-new-nodes args)
       (source/backtrack-races args)
+      (source/backtrack-disabled args)
       (source/mark-as-visited args)))
 
 (defmethod add-trace :naive
