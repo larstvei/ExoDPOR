@@ -70,7 +70,7 @@
 
 (defn disabled-races [search-state trace rels]
   (for [i (range (count trace))
-        j (range (inc i) (count trace))
+        j (range (inc i) (inc (count trace)))
         :let [pre1 (subvec trace 0 i)
               pre2 (subvec trace 0 j)
               ev1 (trace i)
